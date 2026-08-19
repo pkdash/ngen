@@ -1,0 +1,129 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug ngen (example config)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/cmake_build/ngen",
+            "args": [
+                "./data/catchment_data.geojson",
+                "cat-27,cat-52",
+                "./data/nexus_data.geojson",
+                "nex-26,nex-34",
+                "./data/example_realization_config.json"
+            ],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build ngen (CMake)"
+        },
+        {
+            "name": "Debug test_unit",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/cmake_build/test/test_unit",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build test_unit (CMake)"
+        },
+        {
+            "name": "Debug test_unit (filtered)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/cmake_build/test/test_unit",
+            "args": ["--gtest_filter=${input:gtestFilter}"],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build test_unit (CMake)"
+        },
+        {
+            "name": "Debug test_geopackage",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/cmake_build/test/test_geopackage",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build test_unit (CMake)"
+        },
+        {
+            "name": "Debug a test binary",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/cmake_build/test/${input:testBinaryName}",
+            "args": ["--gtest_filter=${input:gtestFilter}"],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build test binary (CMake)"
+        },
+        {
+            "name": "Attach to running ngen process",
+            "type": "cppdbg",
+            "request": "attach",
+            "program": "${workspaceFolder}/cmake_build/ngen",
+            "processId": "${command:pickProcess}",
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb"
+        }
+    ],
+    "inputs": [
+        {
+            "id": "gtestFilter",
+            "type": "promptString",
+            "description": "gtest --gtest_filter value, e.g. HymodKernelTest.TestCalcET0",
+            "default": "*"
+        },
+        {
+            "id": "testBinaryName",
+            "type": "promptString",
+            "description": "Test binary to launch, under cmake_build/test/ (this is also its CMake target name — see test/CMakeLists.txt for the full list, e.g. test_partition, test_nexus, test_geojson, test_mdarray, test_logging). You'll be asked for this name twice: once here, once for the build task — enter the same value both times.",
+            "default": "test_unit"
+        }
+    ]
+}

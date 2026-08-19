@@ -1,0 +1,14 @@
+{
+    "cmake.configureOnOpen": false,
+    "cmake.buildDirectory": "${workspaceFolder}/cmake_build",
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/cmake_build/compile_commands.json",
+    "C_Cpp.default.cppStandard": "c++14",
+    "C_Cpp.default.cStandard": "c11",
+    "files.associations": {
+        "*.hpp": "cpp",
+        "*.h.in": "cpp"
+    },
+    "files.exclude": {
+        "**/cmake_build": true
+    }
+}

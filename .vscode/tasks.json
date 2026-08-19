@@ -1,0 +1,117 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "CMake: Configure",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-S", ".",
+                "-B", "cmake_build",
+                "-DCMAKE_BUILD_TYPE=Debug",
+                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+                "-DBOOST_ROOT=${env:BOOST_ROOT}",
+                "-DNGEN_WITH_TESTS:BOOL=ON",
+                "-DNGEN_WITH_NETCDF:BOOL=ON",
+                "-DNGEN_WITH_SQLITE:BOOL=ON",
+                "-DNGEN_WITH_UDUNITS:BOOL=ON",
+                "-DNGEN_WITH_BMI_C:BOOL=OFF",
+                "-DNGEN_WITH_BMI_FORTRAN:BOOL=OFF",
+                "-DNGEN_WITH_PYTHON:BOOL=OFF",
+                "-DNGEN_WITH_MPI:BOOL=OFF"
+            ],
+            "problemMatcher": [],
+            "detail": "Configures the default build: matches ngen CI's test_unit job (NetCDF/UDUNITS/SQLite on, BMI-C/Python/MPI off). See ngen-vscode-dev-setup.md to enable the optional components."
+        },
+        {
+            "label": "CMake: Configure (Full: BMI-C + Python)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-S", ".",
+                "-B", "cmake_build",
+                "-DCMAKE_BUILD_TYPE=Debug",
+                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+                "-DBOOST_ROOT=${env:BOOST_ROOT}",
+                "-DNGEN_WITH_TESTS:BOOL=ON",
+                "-DNGEN_WITH_NETCDF:BOOL=ON",
+                "-DNGEN_WITH_SQLITE:BOOL=ON",
+                "-DNGEN_WITH_UDUNITS:BOOL=ON",
+                "-DNGEN_WITH_BMI_C:BOOL=ON",
+                "-DNGEN_WITH_BMI_FORTRAN:BOOL=OFF",
+                "-DNGEN_WITH_PYTHON:BOOL=ON",
+                "-DNGEN_WITH_MPI:BOOL=OFF"
+            ],
+            "problemMatcher": [],
+            "detail": "Opt-in configure: also enables BMI-C (pulls in TOPMODEL/CFE/PET/LGAR extern models) and embedded Python. Requires extern/pybind11 to be initialized first — see ngen-vscode-dev-setup.md."
+        },
+        {
+            "label": "Build ngen (CMake)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build", "cmake_build",
+                "--target", "ngen", "testbmicppmodel",
+                "--", "-j", "$(nproc)"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "dependsOn": ["CMake: Configure"],
+            "problemMatcher": ["$gcc"],
+            "detail": "Configures (if needed) then builds the ngen driver executable and the test_bmi_cpp shared library the example realization config in data/ loads."
+        },
+        {
+            "label": "Build test_unit (CMake)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build", "cmake_build",
+                "--target", "test_unit", "test_geopackage",
+                "--", "-j", "$(nproc)"
+            ],
+            "group": "build",
+            "dependsOn": ["CMake: Configure"],
+            "problemMatcher": ["$gcc"],
+            "detail": "Configures (if needed) then builds the test_unit and test_geopackage suites (mirrors ngen CI's test_unit job)."
+        },
+        {
+            "label": "Build test binary (CMake)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build", "cmake_build",
+                "--target", "${input:testBinaryName}",
+                "--", "-j", "$(nproc)"
+            ],
+            "group": "build",
+            "dependsOn": ["CMake: Configure"],
+            "problemMatcher": ["$gcc"],
+            "detail": "Configures (if needed) then builds an arbitrary test target by name. Used as the preLaunchTask for the generic 'Debug a test binary' launch config — see ngen-vscode-dev-setup.md."
+        },
+        {
+            "label": "Clean ngen",
+            "type": "shell",
+            "command": "rm",
+            "args": ["-rf", "cmake_build"],
+            "problemMatcher": [],
+            "detail": "Removes the cmake_build directory entirely."
+        },
+        {
+            "label": "Rebuild ngen",
+            "dependsOrder": "sequence",
+            "dependsOn": ["Clean ngen", "Build ngen (CMake)"],
+            "problemMatcher": [],
+            "detail": "Clean, then a full fresh configure + build."
+        }
+    ],
+    "inputs": [
+        {
+            "id": "testBinaryName",
+            "type": "promptString",
+            "description": "CMake target name to build, which is also the resulting test binary name under cmake_build/test/ (see test/CMakeLists.txt for the full list, e.g. test_partition, test_nexus, test_geojson, test_mdarray, test_logging). Must match what you enter for the launch config's own prompt.",
+            "default": "test_unit"
+        }
+    ]
+}
