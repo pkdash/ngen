@@ -84,7 +84,6 @@ docs/code/html/*
 
 # Certain IDE project files
 /.idea/
-.vscode
 .project
 
 # CMake artifact generation directory
@@ -135,3 +134,7 @@ include/NGenConfig.h
 data/forcing/huc01_demo/
 # HUC01 Demo Testing Hydrofabric
 data/hydrofabric/huc01_demo/
+
+# NGen execution artifacts
+##############################
+output_dir/
