@@ -1,0 +1,36 @@
+{
+    "name": "ngen",
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    // Lets gdb ptrace the debuggee inside the container. Docker's default
+    // seccomp profile blocks the ptrace syscalls gdb needs; without this,
+    // breakpoints silently never hit. Works the same on macOS/Linux/Windows
+    // hosts since the container itself is always Linux.
+    "runArgs": [
+        "--cap-add=SYS_PTRACE",
+        "--security-opt",
+        "seccomp=unconfined"
+    ],
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-vscode.cpptools",
+                "ms-vscode.cpptools-extension-pack",
+                "ms-vscode.cmake-tools",
+                "twxs.cmake"
+            ],
+            "settings": {
+                "cmake.configureOnOpen": false,
+                "C_Cpp.default.compileCommands": "${workspaceFolder}/cmake_build/compile_commands.json",
+                "C_Cpp.default.cppStandard": "c++14"
+            }
+        }
+    },
+    // git's "dubious ownership" check otherwise rejects the bind-mounted repo
+    // (container root vs. host file ownership), which would break CMake's
+    // own `git submodule update` calls at configure time (see
+    // cmake/GitUpdateSubmodules.cmake). test/googletest has no such
+    // automatic update, so it's initialized explicitly here.
+    "postCreateCommand": "git config --global --add safe.directory ${containerWorkspaceFolder} && git submodule update --init --recursive -- test/googletest"
+}
