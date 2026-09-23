@@ -80,6 +80,7 @@ cmake_dependent_option(NGEN_WITH_EXTERN_CFE              "Build with extern-dist
 cmake_dependent_option(NGEN_WITH_EXTERN_LGAR             "Build with extern-distributed LGAR"             ON "NGEN_WITH_BMI_C"       OFF)
 cmake_dependent_option(NGEN_WITH_EXTERN_PET              "Build with extern-distributed PET"              ON "NGEN_WITH_BMI_C"       OFF)
 cmake_dependent_option(NGEN_WITH_EXTERN_NOAH_OWP_MODULAR "Build with extern-distributed Noah-OWP-Modular" ON "NGEN_WITH_BMI_FORTRAN" OFF)
+option(NGEN_WITH_EXTERN_UEB                              "Build with extern-distributed UEB"              OFF)
 
 # Allow enabling of all extern models dependent on NGen options given.
 option(NGEN_WITH_EXTERN_ALL OFF)
@@ -286,6 +287,42 @@ if(NGEN_WITH_BMI_C)
 endif()
 
 # -----------------------------------------------------------------------------
+# Handle the UEB extern BMI-C++ model. UEB's own CMakeLists.txt resolves the
+# bmi-cxx interface headers via a relative "../bmi-cxx" lookup, so this
+# submodule must stay checked out and unrelocated.
+#
+# UEB unconditionally requires the "ewts" (Error and Warning Trapping System)
+# package via find_package(ewts CONFIG REQUIRED). Unlike ngen's other extern
+# BMI models, ewts is a genuine CMake package dependency, not something ngen
+# builds inline - build and install it from extern/ewts first (see
+# extern/ewts/INSTALL.md), then point this configure at the install via
+# -Dewts_DIR=<install-prefix>/lib/cmake/ewts or -DCMAKE_PREFIX_PATH=<install-prefix>.
+if(NGEN_WITH_EXTERN_UEB)
+    git_update_submodule("${NGEN_EXT_DIR}/bmi-cxx")
+
+    find_package(ewts CONFIG QUIET)
+    if(NOT ewts_FOUND)
+        message(FATAL_ERROR
+            "NGEN_WITH_EXTERN_UEB is ON, but the 'ewts' package was not found. "
+            "Build and install it from extern/ewts (see extern/ewts/INSTALL.md), "
+            "then re-configure with -Dewts_DIR=<install-prefix>/lib/cmake/ewts "
+            "or -DCMAKE_PREFIX_PATH=<install-prefix>.")
+    endif()
+
+    add_external_subdirectory(
+        SOURCE     "${NGEN_EXT_DIR}/ueb-bmi"
+        OUTPUT     "${NGEN_EXT_DIR}/ueb-bmi/cmake_build"
+        GIT_UPDATE "${NGEN_EXT_DIR}/ueb-bmi"
+        IMPORTS    bmiuebcxx
+    )
+    # bmi_model_create/bmi_model_destroy are hidden without this fix, since
+    # CMAKE_CXX_VISIBILITY_PRESET is set to "hidden" above and propagates into
+    # this subdirectory - Bmi_Cpp_Adapter's dlsym() call would otherwise fail
+    # at runtime even though the build succeeds (same issue as lasambmi below).
+    set_target_properties(bmiuebcxx PROPERTIES CXX_VISIBILITY_PRESET default)
+endif()
+
+# -----------------------------------------------------------------------------
 # Configure whether Fortran BMI functionality is active
 if(NGEN_WITH_BMI_FORTRAN)
     add_external_subdirectory(
@@ -364,6 +401,10 @@ endif()
 
 if(NGEN_WITH_EXTERN_NOAH_OWP_MODULAR)
     add_dependencies(ngen surfacebmi)
+endif()
+
+if(NGEN_WITH_EXTERN_UEB)
+    add_dependencies(ngen bmiuebcxx)
 endif()
 
 target_include_directories(ngen PUBLIC "${NGEN_INC_DIR}")
@@ -485,6 +526,7 @@ ngen_multiline_message(
 "    NGEN_WITH_EXTERN_CFE: ${NGEN_WITH_EXTERN_CFE}"
 "    NGEN_WITH_EXTERN_PET: ${NGEN_WITH_EXTERN_PET}"
 "    NGEN_WITH_EXTERN_NOAH_OWP_MODULAR: ${NGEN_WITH_EXTERN_NOAH_OWP_MODULAR}"
+"    NGEN_WITH_EXTERN_UEB: ${NGEN_WITH_EXTERN_UEB}"
 "Environment summary:"
 "  Boost:"
 "    Version: ${Boost_VERSION}"

@@ -62,3 +62,9 @@
 [submodule "extern/snow17"]
 	path = extern/snow17
 	url = https://github.com/NOAA-OWP/snow17
+[submodule "extern/ueb-bmi"]
+	path = extern/ueb-bmi
+	url = https://github.com/NGWPC/ueb_bmi.git
+[submodule "extern/ewts"]
+	path = extern/ewts
+	url = https://github.com/NGWPC/nwm-ewts-archive.git

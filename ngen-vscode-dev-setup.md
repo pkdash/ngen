@@ -308,6 +308,55 @@ with `-DNGEN_WITH_MPI:BOOL=ON` and an explicit partition config
 Not installed in the default image. Add `gfortran` to the Dockerfile's apt-get list, rebuild the
 container, then configure with `-DNGEN_WITH_BMI_FORTRAN:BOOL=ON`.
 
+### UEB (snow model, BMI-C++)
+
+UEB (`extern/ueb-bmi`, a pinned submodule) is loaded through the `bmi_c++` formulation —
+`Bmi_Cpp_Adapter`/`bmi_c++` support is compiled into ngen unconditionally, so there's no
+`NGEN_WITH_BMI_CXX` flag to flip; enabling it is just `-DNGEN_WITH_EXTERN_UEB:BOOL=ON`. It pulls in
+two dependencies the default image doesn't have, neither baked into the Dockerfile since UEB is
+the first component in this repo to need them:
+
+1. **A real Boost build with the `serialization` component.** The default image only unpacks
+   Boost headers to `$BOOST_ROOT` — no other extern model here links a compiled Boost library.
+   Inside the container:
+
+   ```bash
+   cd $BOOST_ROOT
+   ./bootstrap.sh --with-libraries=serialization
+   ./b2 install --prefix=/opt/boost-built
+   ```
+
+   Configure with `-DBOOST_ROOT=/opt/boost-built` (or add it to `-DCMAKE_PREFIX_PATH` alongside
+   `$BOOST_ROOT`) so both the headers and the compiled library resolve.
+
+2. **EWTS** (`extern/ewts`, a pinned submodule of NGWPC's "Error and Warning Trapping System") — a
+   hard, non-optional dependency of UEB's `src/CMakeLists.txt` (`find_package(ewts CONFIG
+   REQUIRED)`; there's no flag to disable it at the pinned UEB commit). EWTS itself needs
+   `gfortran` and MPI dev libraries (its ngen bridge does `find_package(MPI REQUIRED COMPONENTS
+   CXX)`):
+
+   ```bash
+   apt-get update && apt-get install -y --no-install-recommends gfortran libopenmpi-dev openmpi-bin
+   ```
+
+   Build and install it with the ngen bridge enabled (see `extern/ewts/INSTALL.md` for the
+   upstream instructions):
+
+   ```bash
+   cmake -B /tmp/ewts-build -S extern/ewts/runtime -DCMAKE_BUILD_TYPE=Release -DEWTS_WITH_NGEN=ON
+   cmake --build /tmp/ewts-build -j
+   cmake --install /tmp/ewts-build --prefix /opt/ewts
+   ```
+
+   EWTS also packages a Python wheel as part of this build and expects Python >= 3.11; the
+   default image's `python3` is Ubuntu 22.04's 3.10, so that step may need its own venv with a
+   newer interpreter if it fails.
+
+With both built, configure ngen itself with `-DNGEN_WITH_EXTERN_UEB:BOOL=ON` plus
+`-Dewts_DIR=/opt/ewts/lib/cmake/ewts` (or add `/opt/ewts` to `-DCMAKE_PREFIX_PATH`). Omitting
+`ewts_DIR`/`CMAKE_PREFIX_PATH` fails the configure fast with a clear "the 'ewts' package was not
+found" error rather than a confusing `find_package` failure deep in `extern/ueb-bmi`.
+
 ---
 
 ## Troubleshooting
