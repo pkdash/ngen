@@ -14,6 +14,9 @@ known-good, pinned Ubuntu 22.04 toolchain instead of fighting host-OS package ve
 works identically whether your host is macOS, Linux, or **Windows** (Docker Desktop always runs
 the container as Linux, regardless of host OS).
 
+This guide was validated against `CIROH-UA/ngen` at commit
+`ad1c083a1db21c04eb13dabd9a78432b619ae0e0` on the `ngiab` branch.
+
 ## Table of Contents
 1. [Dev Container Setup (Docker)](#dev-container-setup-docker)
 2. [VSCode Setup](#vscode-setup)
@@ -310,7 +313,8 @@ container, then configure with `-DNGEN_WITH_BMI_FORTRAN:BOOL=ON`.
 
 ### UEB (snow model, BMI-C++)
 
-UEB (`extern/ueb-bmi`, a pinned submodule) is loaded through the `bmi_c++` formulation —
+UEB (`extern/ueb-bmi`, a pinned submodule — currently pinned at commit
+`5574a89ef2392dcd5d1301b8073d4dc446b934d3`) is loaded through the `bmi_c++` formulation —
 `Bmi_Cpp_Adapter`/`bmi_c++` support is compiled into ngen unconditionally, so there's no
 `NGEN_WITH_BMI_CXX` flag to flip; enabling it is just `-DNGEN_WITH_EXTERN_UEB:BOOL=ON`. It pulls in
 two dependencies the default image doesn't have, neither baked into the Dockerfile since UEB is
