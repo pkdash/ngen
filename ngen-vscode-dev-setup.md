@@ -339,23 +339,71 @@ the first component in this repo to need them:
    apt-get update && apt-get install -y --no-install-recommends gfortran libopenmpi-dev openmpi-bin
    ```
 
-   Build and install it with the ngen bridge enabled (see `extern/ewts/INSTALL.md` for the
-   upstream instructions):
+   Build and install it with the ngen bridge enabled. `extern/ewts/INSTALL.md` (upstream) says to
+   configure from `-S runtime`, but at this repo's pinned commit that fails: `runtime/CMakeLists.txt`
+   has no `project()` call of its own, so `CMAKE_PROJECT_VERSION` is unset and
+   `write_basic_package_version_file` errors out. The real `project(ewts VERSION ...)` lives one
+   level up, in `extern/ewts/CMakeLists.txt`, which `add_subdirectory(runtime)`s — configure from
+   there instead. Separately, the ngen bridge (`extern/ewts/integrations/ngen`) `#include`s
+   `boost/property_tree/...` but never calls `find_package(Boost)`, so its headers need to be added
+   explicitly via `CMAKE_CXX_FLAGS`:
 
    ```bash
-   cmake -B /tmp/ewts-build -S extern/ewts/runtime -DCMAKE_BUILD_TYPE=Release -DEWTS_WITH_NGEN=ON
+   cmake -B /tmp/ewts-build -S extern/ewts -DCMAKE_BUILD_TYPE=Release -DEWTS_WITH_NGEN=ON \
+         -DCMAKE_CXX_FLAGS="-I${BOOST_ROOT}"
    cmake --build /tmp/ewts-build -j
    cmake --install /tmp/ewts-build --prefix /opt/ewts
    ```
 
-   EWTS also packages a Python wheel as part of this build and expects Python >= 3.11; the
-   default image's `python3` is Ubuntu 22.04's 3.10, so that step may need its own venv with a
-   newer interpreter if it fails.
+   EWTS also packages a Python wheel as part of this build; upstream docs say it expects Python
+   >= 3.11, though in practice it has built fine against the default image's Ubuntu 22.04 `python3`
+   (3.10) — if it does fail for you, that's the first thing to suspect, and you'd need a venv with
+   a newer interpreter active before configuring.
 
 With both built, configure ngen itself with `-DNGEN_WITH_EXTERN_UEB:BOOL=ON` plus
 `-Dewts_DIR=/opt/ewts/lib/cmake/ewts` (or add `/opt/ewts` to `-DCMAKE_PREFIX_PATH`). Omitting
 `ewts_DIR`/`CMAKE_PREFIX_PATH` fails the configure fast with a clear "the 'ewts' package was not
 found" error rather than a confusing `find_package` failure deep in `extern/ueb-bmi`.
+
+With `NGEN_WITH_NETCDF:BOOL=ON` (the default configure's setting), two more UEB-specific quirks
+show up that need extra flags:
+
+- `extern/ueb-bmi/CMakeLists.txt` does its own `cmake_minimum_required(VERSION 3.0)` before its
+  `project()` call. Since that's a subdirectory added via `add_external_subdirectory`, it resets
+  policies introduced after 3.0 — including `CMP0057` (the `IN_LIST` operator) — back to OLD for
+  that scope, which breaks ngen's own `cmake/FindnetCDF.cmake` (used when UEB calls
+  `find_package(netCDF REQUIRED)`). Force it back with `-DCMAKE_POLICY_DEFAULT_CMP0057=NEW`.
+- UEB looks for NetCDF via its own `NETCDF_C_LIB_DIR`/`NETCDF_C_INCLUDE_DIR` variables rather than
+  the `NetCDF_*` variables ngen's root config already populated; finding them unset, it calls
+  `find_package(netCDF REQUIRED)` itself, which re-runs `cmake/FindnetCDF.cmake` and tries to
+  create the `NetCDF`/`NetCDF::C` targets a second time, colliding with the ones ngen's own root
+  config already created ("`add_library` cannot create target... another target with the same
+  name already exists"). Pre-populate the two UEB-specific variables so its own `find_package`
+  call is skipped — pointing them at wherever your system's NetCDF actually is, e.g. on Debian/Ubuntu:
+  `-DNETCDF_C_LIB_DIR=/usr/lib/$(gcc -dumpmachine) -DNETCDF_C_INCLUDE_DIR=/usr/include`.
+
+```bash
+cmake -DCMAKE_BUILD_TYPE=Debug \
+      -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+      -DBOOST_ROOT=/opt/boost-built \
+      -DNGEN_WITH_TESTS:BOOL=ON \
+      -DNGEN_WITH_NETCDF:BOOL=ON \
+      -DNGEN_WITH_SQLITE:BOOL=ON \
+      -DNGEN_WITH_UDUNITS:BOOL=ON \
+      -DNGEN_WITH_BMI_C:BOOL=ON \
+      -DNGEN_WITH_PYTHON:BOOL=ON \
+      -DNGEN_WITH_EXTERN_UEB:BOOL=ON \
+      -Dewts_DIR=/opt/ewts/lib/cmake/ewts \
+      -DCMAKE_POLICY_DEFAULT_CMP0057=NEW \
+      -DNETCDF_C_LIB_DIR=/usr/lib/$(gcc -dumpmachine) \
+      -DNETCDF_C_INCLUDE_DIR=/usr/include \
+      -B cmake_build -S .
+```
+
+The above cmake configuration command for ngen is also wired up as the **CMake: Configure (Full: BMI-C + Python + UEB)** VS Code task (with
+matching **Setup: Build Boost with serialization (UEB)** / **Setup: Build and install EWTS (UEB)**
+tasks for steps 1–2 above) — run those two setup tasks (BOOST and EWTS) once, then this configure task (ngen), then the
+usual **Build ngen (CMake)** task.
 
 ---
 

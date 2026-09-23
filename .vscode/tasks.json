@@ -46,6 +46,39 @@
             "detail": "Opt-in configure: also enables BMI-C (pulls in TOPMODEL/CFE/PET/LGAR extern models) and embedded Python. Requires extern/pybind11 to be initialized first — see ngen-vscode-dev-setup.md."
         },
         {
+            "label": "Setup: Build Boost with serialization (UEB)",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                "cd \"${env:BOOST_ROOT}\" && ./bootstrap.sh --with-libraries=serialization && ./b2 install --prefix=/opt/boost-built"
+            ],
+            "problemMatcher": [],
+            "detail": "One-time setup for UEB: builds and installs a compiled Boost (with the serialization component) to /opt/boost-built. The default image only has Boost headers at $BOOST_ROOT. Run this once before using the UEB configure task."
+        },
+        {
+            "label": "Setup: Build and install EWTS (UEB)",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                "apt-get update && apt-get install -y --no-install-recommends gfortran libopenmpi-dev openmpi-bin && cmake -B /tmp/ewts-build -S extern/ewts -DCMAKE_BUILD_TYPE=Release -DEWTS_WITH_NGEN=ON -DCMAKE_CXX_FLAGS=\"-I${env:BOOST_ROOT}\" && cmake --build /tmp/ewts-build -j $(nproc) && cmake --install /tmp/ewts-build --prefix /opt/ewts"
+            ],
+            "problemMatcher": [],
+            "detail": "One-time setup for UEB: installs gfortran/MPI dev libs, then builds and installs EWTS (UEB's hard find_package(ewts) dependency) to /opt/ewts. Configures from extern/ewts (the root CMakeLists.txt with the real project()/VERSION), not extern/ewts/runtime as upstream's INSTALL.md says — the runtime-only configure has no project() and fails at write_basic_package_version_file. Also passes Boost's headers via CMAKE_CXX_FLAGS since EWTS's ngen bridge includes boost/property_tree but never calls find_package(Boost) itself. Run this once before using the UEB configure task, after the Boost setup task."
+        },
+        {
+            "label": "CMake: Configure (Full: BMI-C + Python + UEB)",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                "cmake -S . -B cmake_build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DBOOST_ROOT=/opt/boost-built -DNGEN_WITH_TESTS:BOOL=ON -DNGEN_WITH_NETCDF:BOOL=ON -DNGEN_WITH_SQLITE:BOOL=ON -DNGEN_WITH_UDUNITS:BOOL=ON -DNGEN_WITH_BMI_C:BOOL=ON -DNGEN_WITH_BMI_FORTRAN:BOOL=OFF -DNGEN_WITH_PYTHON:BOOL=ON -DNGEN_WITH_MPI:BOOL=OFF -DNGEN_WITH_EXTERN_UEB:BOOL=ON -Dewts_DIR=/opt/ewts/lib/cmake/ewts -DCMAKE_POLICY_DEFAULT_CMP0057=NEW -DNETCDF_C_LIB_DIR=/usr/lib/$(gcc -dumpmachine) -DNETCDF_C_INCLUDE_DIR=/usr/include"
+            ],
+            "problemMatcher": [],
+            "detail": "Opt-in configure: everything in the BMI-C + Python task, plus UEB (bmi_c++ snow model). Requires a compiled Boost (with serialization) installed to /opt/boost-built and EWTS installed to /opt/ewts first — see the UEB section of ngen-vscode-dev-setup.md. Also forces CMP0057=NEW and pre-supplies NETCDF_C_LIB_DIR/NETCDF_C_INCLUDE_DIR, working around two bugs in extern/ueb-bmi's own CMakeLists.txt that otherwise break NetCDF detection when NGEN_WITH_NETCDF is on."
+        },
+        {
             "label": "Build ngen (CMake)",
             "type": "shell",
             "command": "cmake",
