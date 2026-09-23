@@ -7,9 +7,19 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Base toolchain + the dependencies ngen's CI (.github/actions/ngen-build)
 # installs for its default (no BMI_C / no Python / no MPI) build on
 # ubuntu-22.04: NetCDF, UDUNITS2, and SQLite3 (for GeoPackage support).
+#
+# gfortran and libnetcdff-dev go beyond that default so BMI-Fortran
+# (NGEN_WITH_BMI_FORTRAN, which pulls in extern/iso_c_fortran_bmi and
+# Noah-OWP-Modular) can be enabled by just flipping the CMake option, with no
+# image rebuild. gfortran is also what the EWTS/UEB setup task used to
+# apt-install at runtime. libnetcdff-dev is belt-and-braces: an in-ngen Noah
+# build takes the shim's NGEN_IS_MAIN_PROJECT branch and never looks for
+# netcdff, but ngen's CI installs it unconditionally on Linux, so that path is
+# the better-tested one.
 # ---------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
+        gfortran \
         gdb \
         cmake \
         git \
@@ -21,6 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libnetcdf-dev \
         libnetcdf-c++4-1 \
         libnetcdf-c++4-dev \
+        libnetcdff-dev \
         libudunits2-dev \
         libsqlite3-dev \
         python3 \
