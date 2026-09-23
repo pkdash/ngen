@@ -89,6 +89,8 @@ docs/code/html/*
 # CMake artifact generation directory
 /cmake-build-*/
 Makefile
+# ...but commands/Makefile is hand-written dev tooling, not a CMake artifact
+!/commands/Makefile
 CMakeFiles
 CMakeCache.txt
 *.cmake
