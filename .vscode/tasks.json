@@ -1,18 +1,18 @@
 {
     "version": "2.0.0",
-    // NOTE: every task that runs a shell script below uses "type": "process", not "shell".
-    // A "shell" task is re-wrapped by VS Code as /bin/bash -c '<the whole command>', which breaks
-    // on any apostrophe in the script; "process" execs bash directly with these args. For the same
-    // reason, the scripts below deliberately contain no single quotes.
+    // Every task below is a thin wrapper around a target in commands/Makefile, which is the single
+    // source of truth for the CMake flag sets and the setup steps. Add or change flags there, not
+    // here. Run the same targets from a terminal with: make -C commands <target>
+    //
+    // NOTE: these use "type": "process", not "shell". A "shell" task is re-wrapped by VS Code as
+    // /bin/bash -c '<the whole command>', which breaks on any apostrophe in the command; "process"
+    // execs make directly with these args.
     "tasks": [
         {
             "label": "CMake: Configure",
             "type": "process",
-            "command": "bash",
-            "args": [
-                "-c",
-                "[ -n \"$BOOST_ROOT\" ] || BOOST_ROOT=/opt/boost_1_79_0; [ -r \"$BOOST_ROOT/boost/version.hpp\" ] || [ -r \"$BOOST_ROOT/include/boost/version.hpp\" ] || { echo \"ERROR: no readable boost/version.hpp under $BOOST_ROOT. See Troubleshooting 3b (Found unsuitable version 0.0.0) in ngen-vscode-dev-setup.md.\"; exit 1; }; cmake -S . -B cmake_build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DBOOST_ROOT=\"$BOOST_ROOT\" -DNGEN_WITH_TESTS:BOOL=ON -DNGEN_WITH_NETCDF:BOOL=ON -DNGEN_WITH_SQLITE:BOOL=ON -DNGEN_WITH_UDUNITS:BOOL=ON -DNGEN_WITH_BMI_C:BOOL=OFF -DNGEN_WITH_BMI_FORTRAN:BOOL=OFF -DNGEN_WITH_PYTHON:BOOL=OFF -DNGEN_WITH_MPI:BOOL=OFF"
-            ],
+            "command": "make",
+            "args": ["-C", "commands", "configure"],
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -22,11 +22,8 @@
         {
             "label": "Setup: Python venv (numpy<2)",
             "type": "process",
-            "command": "bash",
-            "args": [
-                "-c",
-                "python3 -m venv .venv-linux && .venv-linux/bin/pip install --quiet --upgrade pip && .venv-linux/bin/pip install --quiet \"numpy<2.0\" && git submodule update --init --recursive -- extern/pybind11 && echo -n \"venv ready: numpy \" && .venv-linux/bin/python -c \"import numpy;print(numpy.__version__)\""
-            ],
+            "command": "make",
+            "args": ["-C", "commands", "setup-venv"],
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -36,11 +33,8 @@
         {
             "label": "CMake: Configure (Full: BMI-C + Python)",
             "type": "process",
-            "command": "bash",
-            "args": [
-                "-c",
-                "[ -x .venv-linux/bin/python ] || { echo \"ERROR: no .venv-linux in the workspace. Run the Setup: Python venv (numpy<2) task first — NGEN_WITH_PYTHON=ON needs a venv with numpy<2.0, and a Command Palette task does not inherit one from your terminal.\"; exit 1; }; . .venv-linux/bin/activate; [ -n \"$BOOST_ROOT\" ] || BOOST_ROOT=/opt/boost_1_79_0; [ -r \"$BOOST_ROOT/boost/version.hpp\" ] || [ -r \"$BOOST_ROOT/include/boost/version.hpp\" ] || { echo \"ERROR: no readable boost/version.hpp under $BOOST_ROOT. See Troubleshooting 3b (Found unsuitable version 0.0.0) in ngen-vscode-dev-setup.md.\"; exit 1; }; cmake -S . -B cmake_build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DBOOST_ROOT=\"$BOOST_ROOT\" -DNGEN_WITH_TESTS:BOOL=ON -DNGEN_WITH_NETCDF:BOOL=ON -DNGEN_WITH_SQLITE:BOOL=ON -DNGEN_WITH_UDUNITS:BOOL=ON -DNGEN_WITH_BMI_C:BOOL=ON -DNGEN_WITH_BMI_FORTRAN:BOOL=OFF -DNGEN_WITH_PYTHON:BOOL=ON -DNGEN_WITH_MPI:BOOL=OFF"
-            ],
+            "command": "make",
+            "args": ["-C", "commands", "configure-python"],
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -50,11 +44,8 @@
         {
             "label": "CMake: Configure (BMI-C + Fortran/Noah)",
             "type": "process",
-            "command": "bash",
-            "args": [
-                "-c",
-                "[ -n \"$BOOST_ROOT\" ] || BOOST_ROOT=/opt/boost_1_79_0; [ -r \"$BOOST_ROOT/boost/version.hpp\" ] || [ -r \"$BOOST_ROOT/include/boost/version.hpp\" ] || { echo \"ERROR: no readable boost/version.hpp under $BOOST_ROOT. See Troubleshooting 3b (Found unsuitable version 0.0.0) in ngen-vscode-dev-setup.md.\"; exit 1; }; cmake -S . -B cmake_build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DBOOST_ROOT=\"$BOOST_ROOT\" -DNGEN_WITH_TESTS:BOOL=ON -DNGEN_WITH_NETCDF:BOOL=ON -DNGEN_WITH_SQLITE:BOOL=ON -DNGEN_WITH_UDUNITS:BOOL=ON -DNGEN_WITH_BMI_C:BOOL=ON -DNGEN_WITH_BMI_FORTRAN:BOOL=ON -DNGEN_WITH_PYTHON:BOOL=OFF -DNGEN_WITH_MPI:BOOL=OFF"
-            ],
+            "command": "make",
+            "args": ["-C", "commands", "configure-fortran"],
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -64,11 +55,8 @@
         {
             "label": "Setup: Build Boost with serialization (UEB)",
             "type": "process",
-            "command": "bash",
-            "args": [
-                "-c",
-                "[ -n \"$BOOST_ROOT\" ] || BOOST_ROOT=/opt/boost_1_79_0; cd \"$BOOST_ROOT\" && ./bootstrap.sh --with-libraries=serialization && ./b2 install --prefix=/opt/boost-built && [ -r /opt/boost-built/include/boost/version.hpp ] && echo \"Boost install complete.\" || { echo \"ERROR: b2 install did not complete — /opt/boost-built/include/boost/version.hpp is missing. Re-run this task; a partial install makes every configure fail with Boost version 0.0.0.\"; exit 1; }"
-            ],
+            "command": "make",
+            "args": ["-C", "commands", "setup-boost"],
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -78,11 +66,8 @@
         {
             "label": "Setup: Build and install EWTS (UEB)",
             "type": "process",
-            "command": "bash",
-            "args": [
-                "-c",
-                "[ -n \"$BOOST_ROOT\" ] || BOOST_ROOT=/opt/boost_1_79_0; apt-get update && apt-get install -y --no-install-recommends libopenmpi-dev openmpi-bin && cmake -B /tmp/ewts-build -S extern/ewts -DCMAKE_BUILD_TYPE=Release -DEWTS_WITH_NGEN=ON -DCMAKE_CXX_FLAGS=\"-I$BOOST_ROOT\" && cmake --build /tmp/ewts-build -j $(nproc) && cmake --install /tmp/ewts-build --prefix /opt/ewts"
-            ],
+            "command": "make",
+            "args": ["-C", "commands", "setup-ewts"],
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -92,11 +77,8 @@
         {
             "label": "CMake: Configure (BMI-C + UEB)",
             "type": "process",
-            "command": "bash",
-            "args": [
-                "-c",
-                "[ -r /opt/boost-built/include/boost/version.hpp ] || { echo \"ERROR: /opt/boost-built has no readable boost/version.hpp — UEB needs the compiled Boost. Run (or re-run to completion) the Setup: Build Boost with serialization (UEB) task.\"; exit 1; }; [ -d /opt/ewts ] || { echo \"ERROR: /opt/ewts not found. Run the Setup: Build and install EWTS (UEB) task first.\"; exit 1; }; cmake -S . -B cmake_build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DBOOST_ROOT=/opt/boost-built -DNGEN_WITH_TESTS:BOOL=ON -DNGEN_WITH_NETCDF:BOOL=ON -DNGEN_WITH_SQLITE:BOOL=ON -DNGEN_WITH_UDUNITS:BOOL=ON -DNGEN_WITH_BMI_C:BOOL=ON -DNGEN_WITH_BMI_FORTRAN:BOOL=OFF -DNGEN_WITH_PYTHON:BOOL=OFF -DNGEN_WITH_MPI:BOOL=OFF -DNGEN_WITH_EXTERN_UEB:BOOL=ON -Dewts_DIR=/opt/ewts/lib/cmake/ewts -DCMAKE_POLICY_DEFAULT_CMP0057=NEW -DNETCDF_C_LIB_DIR=/usr/lib/$(gcc -dumpmachine) -DNETCDF_C_INCLUDE_DIR=/usr/include"
-            ],
+            "command": "make",
+            "args": ["-C", "commands", "configure-ueb"],
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -106,89 +88,73 @@
         {
             "label": "CMake: Configure (Everything)",
             "type": "process",
-            "command": "bash",
-            "args": [
-                "-c",
-                "[ -x .venv-linux/bin/python ] || { echo \"ERROR: no .venv-linux in the workspace. Run the Setup: Python venv (numpy<2) task first.\"; exit 1; }; [ -r /opt/boost-built/include/boost/version.hpp ] || { echo \"ERROR: /opt/boost-built has no readable boost/version.hpp. Run (or re-run to completion) the Setup: Build Boost with serialization (UEB) task.\"; exit 1; }; [ -d /opt/ewts ] || { echo \"ERROR: /opt/ewts not found. Run the Setup: Build and install EWTS (UEB) task first.\"; exit 1; }; . .venv-linux/bin/activate; cmake -S . -B cmake_build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DBOOST_ROOT=/opt/boost-built -DNGEN_WITH_TESTS:BOOL=ON -DNGEN_WITH_NETCDF:BOOL=ON -DNGEN_WITH_SQLITE:BOOL=ON -DNGEN_WITH_UDUNITS:BOOL=ON -DNGEN_WITH_BMI_C:BOOL=ON -DNGEN_WITH_BMI_FORTRAN:BOOL=ON -DNGEN_WITH_PYTHON:BOOL=ON -DNGEN_WITH_MPI:BOOL=OFF -DNGEN_WITH_EXTERN_UEB:BOOL=ON -Dewts_DIR=/opt/ewts/lib/cmake/ewts -DCMAKE_POLICY_DEFAULT_CMP0057=NEW -DNETCDF_C_LIB_DIR=/usr/lib/$(gcc -dumpmachine) -DNETCDF_C_INCLUDE_DIR=/usr/include"
-            ],
+            "command": "make",
+            "args": ["-C", "commands", "configure-all"],
             "options": {
                 "cwd": "${workspaceFolder}"
             },
             "problemMatcher": [],
-            "detail": "Opt-in configure: every model component this image supports at once — BMI-C (SLoTH/TOPMODEL/CFE/PET/LGAR), BMI-Fortran (Noah-OWP-Modular), UEB (bmi_c++) and embedded Python (which turns routing on). Uses /opt/boost-built as BOOST_ROOT since UEB needs the compiled Boost, and that install serves the rest too. Requires all three setup tasks first (Python venv, Boost, EWTS) — each is checked up front. Not included: MPI (no runtime in the image) and SMP/SoilFreezeThaw (independent NGEN_WITH_EXTERN_SMP/SFT options, untested here). Build with: cmake --build cmake_build --target ngen bmiuebcxx surfacebmi -j $(nproc)"
-        },
-        {
-            "label": "CMake: Configure (if needed)",
-            "type": "process",
-            "command": "bash",
-            "args": [
-                "-c",
-                "if [ -f cmake_build/CMakeCache.txt ]; then echo \"Using the existing cmake_build configuration:\"; grep -E \"^NGEN_WITH_(BMI_C|BMI_FORTRAN|PYTHON|MPI|EXTERN_UEB):\" cmake_build/CMakeCache.txt | sed \"s/^/  /\"; echo \"  (run Clean ngen, or a Configure task, to change it)\"; exit 0; fi; echo \"No cmake_build/CMakeCache.txt — running the default configure.\"; [ -n \"$BOOST_ROOT\" ] || BOOST_ROOT=/opt/boost_1_79_0; [ -r \"$BOOST_ROOT/boost/version.hpp\" ] || [ -r \"$BOOST_ROOT/include/boost/version.hpp\" ] || { echo \"ERROR: no readable boost/version.hpp under $BOOST_ROOT. See Troubleshooting 3b (Found unsuitable version 0.0.0) in ngen-vscode-dev-setup.md.\"; exit 1; }; cmake -S . -B cmake_build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DBOOST_ROOT=\"$BOOST_ROOT\" -DNGEN_WITH_TESTS:BOOL=ON -DNGEN_WITH_NETCDF:BOOL=ON -DNGEN_WITH_SQLITE:BOOL=ON -DNGEN_WITH_UDUNITS:BOOL=ON -DNGEN_WITH_BMI_C:BOOL=OFF -DNGEN_WITH_BMI_FORTRAN:BOOL=OFF -DNGEN_WITH_PYTHON:BOOL=OFF -DNGEN_WITH_MPI:BOOL=OFF"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
-            "problemMatcher": [],
-            "detail": "Internal helper the Build tasks depend on: runs the default configure only when cmake_build has no CMakeCache.txt yet, and otherwise leaves whatever you configured alone (printing which optional components are on). This is what keeps Cmd+Shift+B from silently reverting an opt-in configure — Fortran/Noah, Python, UEB or Everything — back to the default flags."
+            "detail": "Opt-in configure: every model component this image supports at once — BMI-C (SLoTH/TOPMODEL/CFE/PET/LGAR), BMI-Fortran (Noah-OWP-Modular), UEB (bmi_c++) and embedded Python (which turns routing on). Uses /opt/boost-built as BOOST_ROOT since UEB needs the compiled Boost, and that install serves the rest too. Requires all three setup tasks first (Python venv, Boost, EWTS) — each is checked up front. Not included: MPI (no runtime in the image) and SMP/SoilFreezeThaw (independent NGEN_WITH_EXTERN_SMP/SFT options, untested here). Build with: make -C commands build TARGETS=\"ngen bmiuebcxx surfacebmi\""
         },
         {
             "label": "Build ngen (CMake)",
-            "type": "shell",
-            "command": "cmake",
-            "args": [
-                "--build", "cmake_build",
-                "--target", "ngen", "testbmicppmodel",
-                "--", "-j", "$(nproc)"
-            ],
+            "type": "process",
+            "command": "make",
+            "args": ["-C", "commands", "build"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
             "group": {
                 "kind": "build",
                 "isDefault": true
             },
-            "dependsOn": ["CMake: Configure (if needed)"],
             "problemMatcher": ["$gcc"],
-            "detail": "Configures (if needed) then builds the ngen driver executable and the test_bmi_cpp shared library the example realization config in data/ loads. NOTE: this re-runs the DEFAULT configure first, so after an opt-in configure task (Fortran/Noah, Python, UEB, Everything) build from a terminal instead: cmake --build cmake_build --target ngen -j $(nproc)"
+            "detail": "Builds the ngen driver executable and the test_bmi_cpp shared library the example realization config in data/ loads. The Makefile runs the DEFAULT configure only when cmake_build/CMakeCache.txt is absent, so an opt-in configure (Fortran/Noah, Python, UEB, Everything) is never silently reverted; it prints the active options before building. For the extra model libraries of an opt-in configure, pass the targets: make -C commands build TARGETS=\"ngen bmiuebcxx\""
         },
         {
             "label": "Build test_unit (CMake)",
-            "type": "shell",
-            "command": "cmake",
-            "args": [
-                "--build", "cmake_build",
-                "--target", "test_unit", "test_geopackage",
-                "--", "-j", "$(nproc)"
-            ],
+            "type": "process",
+            "command": "make",
+            "args": ["-C", "commands", "build-tests"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
             "group": "build",
-            "dependsOn": ["CMake: Configure (if needed)"],
             "problemMatcher": ["$gcc"],
             "detail": "Configures (if needed) then builds the test_unit and test_geopackage suites (mirrors ngen CI's test_unit job)."
         },
         {
             "label": "Build test binary (CMake)",
-            "type": "shell",
-            "command": "cmake",
-            "args": [
-                "--build", "cmake_build",
-                "--target", "${input:testBinaryName}",
-                "--", "-j", "$(nproc)"
-            ],
+            "type": "process",
+            "command": "make",
+            "args": ["-C", "commands", "build-test", "TARGET=${input:testBinaryName}"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
             "group": "build",
-            "dependsOn": ["CMake: Configure (if needed)"],
             "problemMatcher": ["$gcc"],
             "detail": "Configures (if needed) then builds an arbitrary test target by name. Used as the preLaunchTask for the generic 'Debug a test binary' launch config — see ngen-vscode-dev-setup.md."
         },
         {
             "label": "Clean ngen",
-            "type": "shell",
-            "command": "rm",
-            "args": ["-rf", "cmake_build"],
+            "type": "process",
+            "command": "make",
+            "args": ["-C", "commands", "clean"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
             "problemMatcher": [],
             "detail": "Removes the cmake_build directory entirely. Also the fix when a configure task picks up stale cached paths from a different configure task — they all share one cmake_build."
         },
         {
             "label": "Rebuild ngen",
-            "dependsOrder": "sequence",
-            "dependsOn": ["Clean ngen", "Build ngen (CMake)"],
-            "problemMatcher": [],
+            "type": "process",
+            "command": "make",
+            "args": ["-C", "commands", "rebuild"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": ["$gcc"],
             "detail": "Clean, then a full fresh configure + build."
         }
     ],
