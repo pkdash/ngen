@@ -365,22 +365,7 @@ With both built, configure ngen itself with `-DNGEN_WITH_EXTERN_UEB:BOOL=ON` plu
 `ewts_DIR`/`CMAKE_PREFIX_PATH` fails the configure fast with a clear "the 'ewts' package was not
 found" error rather than a confusing `find_package` failure deep in `extern/ueb-bmi`.
 
-With `NGEN_WITH_NETCDF:BOOL=ON` (the default configure's setting), two more UEB-specific quirks
-show up that need extra flags:
-
-- `extern/ueb-bmi/CMakeLists.txt` does its own `cmake_minimum_required(VERSION 3.0)` before its
-  `project()` call. Since that's a subdirectory added via `add_external_subdirectory`, it resets
-  policies introduced after 3.0 — including `CMP0057` (the `IN_LIST` operator) — back to OLD for
-  that scope, which breaks ngen's own `cmake/FindnetCDF.cmake` (used when UEB calls
-  `find_package(netCDF REQUIRED)`). Force it back with `-DCMAKE_POLICY_DEFAULT_CMP0057=NEW`.
-- UEB looks for NetCDF via its own `NETCDF_C_LIB_DIR`/`NETCDF_C_INCLUDE_DIR` variables rather than
-  the `NetCDF_*` variables ngen's root config already populated; finding them unset, it calls
-  `find_package(netCDF REQUIRED)` itself, which re-runs `cmake/FindnetCDF.cmake` and tries to
-  create the `NetCDF`/`NetCDF::C` targets a second time, colliding with the ones ngen's own root
-  config already created ("`add_library` cannot create target... another target with the same
-  name already exists"). Pre-populate the two UEB-specific variables so its own `find_package`
-  call is skipped — pointing them at wherever your system's NetCDF actually is, e.g. on Debian/Ubuntu:
-  `-DNETCDF_C_LIB_DIR=/usr/lib/$(gcc -dumpmachine) -DNETCDF_C_INCLUDE_DIR=/usr/include`.
+With `NGEN_WITH_NETCDF:BOOL=ON` (the default configure's setting), two more flags are needed:
 
 ```bash
 cmake -DCMAKE_BUILD_TYPE=Debug \
