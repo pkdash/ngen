@@ -63,6 +63,9 @@ This guide was validated against `CIROH-UA/ngen` at commit
   `libudunits2-dev`, `libsqlite3-dev`) — matches the default flags
   `.github/actions/ngen-build/action.yaml` uses when no extra `bmi_c`/`use_python`/`use_mpi` inputs
   are passed (i.e. exactly what the `test_unit` CI job builds with).
+- **gfortran** (plus `libnetcdff-dev`, which CI installs alongside it on Linux) — so BMI-Fortran and
+  Noah-OWP-Modular are a CMake flag flip rather than an image rebuild. See
+  [BMI-Fortran / Noah-OWP-Modular](#bmi-fortran--noah-owp-modular).
 - `gdb`, with `--cap-add=SYS_PTRACE` / `seccomp=unconfined` set in `.devcontainer/devcontainer.json`
   so breakpoints and stepping work (Docker's default seccomp profile blocks the ptrace syscalls gdb
   needs).
@@ -81,7 +84,9 @@ is fast and reliable. It does **not** by default enable:
 - **Embedded Python / BMI-Python / t-route routing** — `NGEN_WITH_PYTHON=OFF` (and routing follows,
   since it depends on Python). t-route in particular is a heavy, separately-maintained Python
   package with its own build step; it's out of scope for this guide.
-- **BMI-Fortran** — `NGEN_WITH_BMI_FORTRAN=OFF`. No Fortran compiler is installed in the image.
+- **BMI-Fortran / Noah-OWP-Modular** — `NGEN_WITH_BMI_FORTRAN=OFF` by default, though `gfortran` *is*
+  installed, so this one needs no image changes to enable — see
+  [BMI-Fortran / Noah-OWP-Modular](#bmi-fortran--noah-owp-modular).
 - **MPI / distributed processing** — `NGEN_WITH_MPI=OFF`. No MPI runtime is installed in the image.
 - **macOS-native (non-Docker) debugging** — this guide is Docker/gdb-only. If you'd rather build
   directly on macOS with lldb, see `INSTALL.md` instead; nothing here prevents that, it's just not
@@ -124,15 +129,29 @@ Press `Cmd+Shift+B` (Mac) or `Ctrl+Shift+B` (Linux/Windows) to run the default b
 
 - **CMake: Configure** — the default configure, matching ngen CI's `test_unit` job flags:
   `cmake -S . -B cmake_build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DBOOST_ROOT=$BOOST_ROOT -DNGEN_WITH_TESTS=ON -DNGEN_WITH_NETCDF=ON -DNGEN_WITH_SQLITE=ON -DNGEN_WITH_UDUNITS=ON -DNGEN_WITH_BMI_C=OFF -DNGEN_WITH_BMI_FORTRAN=OFF -DNGEN_WITH_PYTHON=OFF -DNGEN_WITH_MPI=OFF`
-- **CMake: Configure (Full: BMI-C + Python)** — same, but with `NGEN_WITH_BMI_C=ON` and
-  `NGEN_WITH_PYTHON=ON`; see [Enabling Optional Components](#enabling-optional-components) before
-  using this one
-- **Build ngen (CMake)** — the default build task; re-runs Configure first (cheap/idempotent), then
-  builds the `ngen` target
-- **Build test_unit (CMake)** — configures, then builds the `test_unit` and `test_geopackage`
-  targets
+- **Setup: Python venv (numpy<2)** — one-time; creates the container-side `.venv-linux` and
+  initializes `extern/pybind11`. Only needed for the Python configure task below
+- **CMake: Configure (Full: BMI-C + Python)** — same as the default, but with `NGEN_WITH_BMI_C=ON`
+  and `NGEN_WITH_PYTHON=ON` (routing follows). Activates `.venv-linux` itself, so run the setup
+  task above once first; see [Enabling Optional Components](#enabling-optional-components)
+- **CMake: Configure (BMI-C + Fortran/Noah)** — `NGEN_WITH_BMI_C=ON` plus
+  `NGEN_WITH_BMI_FORTRAN=ON`, which brings in Noah-OWP-Modular (Python stays OFF, so no venv
+  needed); see [BMI-Fortran / Noah-OWP-Modular](#bmi-fortran--noah-owp-modular)
+- **CMake: Configure (BMI-C + UEB)** — BMI-C plus the UEB snow model; needs the two UEB setup tasks
+  run once first, see [UEB](#ueb-snow-model-bmi-c)
+- **CMake: Configure (Everything)** — all of the above in one build; needs all three setup tasks
+  first, see [Everything at once](#everything-at-once)
+- **Build ngen (CMake)** — the default build task; builds the `ngen` target
+- **Build test_unit (CMake)** — builds the `test_unit` and `test_geopackage` targets
 - **Clean ngen** — `rm -rf cmake_build`
 - **Rebuild ngen** — Clean, then Build, in one step
+
+The Build tasks depend on **CMake: Configure (if needed)**, an internal helper that runs the
+*default* configure only when `cmake_build` has no `CMakeCache.txt` yet. If you already configured
+with one of the opt-in tasks, it prints which optional components are on and leaves your
+configuration untouched — so `Cmd+Shift+B` after an Everything/Fortran/Python/UEB configure builds
+what you configured, rather than reverting to the default flags. To switch configurations, run
+**Clean ngen** and then the Configure task you want.
 
 ### Method 2: Using the Terminal
 
@@ -274,25 +293,26 @@ be on (see below) since they reference CFE/PET/Noah-OWP-Modular formulations.
 
 ### BMI-C models (CFE, TOPMODEL, PET, LGAR) + Python
 
-Run the **CMake: Configure (Full: BMI-C + Python)** task instead of the default one, then build as
-usual. The `extern/pybind11` submodule must exist first (BMI-C's own submodules — SLoTH, TOPMODEL,
-CFE, PET, LGAR — auto-initialize themselves during configure via
-`cmake/GitUpdateSubmodules.cmake`, but pybind11 does not):
+Run the **Setup: Python venv (numpy<2)** task once, then **CMake: Configure (Full: BMI-C + Python)**
+instead of the default one, and build as usual. The setup task does both prerequisites:
 
 ```bash
+python3 -m venv .venv-linux
+.venv-linux/bin/pip install 'numpy<2.0'
 git submodule update --init --recursive -- extern/pybind11
 ```
 
-Building `NGEN_WITH_PYTHON=ON` requires NumPy `<2.0` visible to the Python interpreter CMake finds
-(`numpy>=2.0.0` is explicitly rejected by `CMakeLists.txt`). Install it in a venv and activate it
-*before* configuring, since CMake binds to whichever interpreter is active at configure time and
-the same venv must stay active when you later run `ngen`:
+- **NumPy `<2.0`** must be visible to the interpreter CMake finds — `numpy>=2.0.0` is explicitly
+  rejected by `CMakeLists.txt`.
+- **`extern/pybind11`** must exist before configure. BMI-C's own submodules (SLoTH, TOPMODEL, CFE,
+  PET, LGAR) auto-initialize via `cmake/GitUpdateSubmodules.cmake`, but pybind11 does not.
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install 'numpy<2.0'
-```
+The venv is named `.venv-linux`, not `.venv`, on purpose: a `.venv` created on a macOS host is
+bind-mounted into the container but its binaries can't run there. The configure task activates
+`.venv-linux` itself — a Command Palette task doesn't inherit whatever you activated in a
+terminal — and refuses to run with a pointer to the setup task if it's missing. CMake binds to the
+interpreter present at configure time, so activate the same venv yourself
+(`source .venv-linux/bin/activate`) when you later *run* that `ngen` binary.
 
 ### MPI / distributed processing
 
@@ -306,10 +326,62 @@ Rebuild the container (Command Palette → **"Dev Containers: Rebuild Container"
 with `-DNGEN_WITH_MPI:BOOL=ON` and an explicit partition config
 (see `doc/DISTRIBUTED_PROCESSING.md`).
 
-### BMI-Fortran
+### BMI-Fortran / Noah-OWP-Modular
 
-Not installed in the default image. Add `gfortran` to the Dockerfile's apt-get list, rebuild the
-container, then configure with `-DNGEN_WITH_BMI_FORTRAN:BOOL=ON`.
+`gfortran` is in the image, so there is nothing to install and no setup task to run — unlike UEB
+below, Noah-OWP-Modular has no `find_package` dependency and needs no compiled Boost. Run the
+**CMake: Configure (BMI-C + Fortran/Noah)** task, or equivalently:
+
+```bash
+cmake -S . -B cmake_build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+    -DBOOST_ROOT=$BOOST_ROOT -DNGEN_WITH_TESTS:BOOL=ON -DNGEN_WITH_NETCDF:BOOL=ON \
+    -DNGEN_WITH_SQLITE:BOOL=ON -DNGEN_WITH_UDUNITS:BOOL=ON -DNGEN_WITH_BMI_C:BOOL=ON \
+    -DNGEN_WITH_BMI_FORTRAN:BOOL=ON -DNGEN_WITH_PYTHON:BOOL=OFF -DNGEN_WITH_MPI:BOOL=OFF
+
+cmake --build cmake_build --target ngen -- -j $(nproc)
+```
+
+`NGEN_WITH_PYTHON` is deliberately OFF here: Noah needs nothing from it, and turning it on makes
+configure fail with `Could NOT find Python (missing: Python_NumPy_INCLUDE_DIRS NumPy)` unless a
+`numpy<2.0` virtualenv is active *in the shell the task runs in* — which a Command Palette task
+does not inherit. Combine Python with Fortran only from a terminal where you've activated the venv
+yourself.
+
+What happens under the hood, all driven by `NGEN_WITH_BMI_FORTRAN=ON`:
+
+- `extern/iso_c_fortran_bmi` is added as a subdirectory (`libiso_c_bmi.so`) — the `iso_c_binding`
+  middleware `Bmi_Fortran_Adapter` calls through. Note the `BMI_FORTRAN_ISO_C_LIB_DIR`/`_NAME`
+  entries in the configure summary print as `OFF`; that's cosmetic (they're declared with
+  `option()`, which coerces a string default to a bool) and doesn't affect linkage, which goes
+  through the `iso_c_bmi` CMake target.
+- `NGEN_WITH_EXTERN_NOAH_OWP_MODULAR` defaults ON whenever `NGEN_WITH_BMI_FORTRAN` is ON
+  (`cmake_dependent_option` in the top-level `CMakeLists.txt`), so Noah builds as `libsurfacebmi.so`
+  at `extern/noah-owp-modular/cmake_build/` — exactly the path the shipped realization configs
+  expect. Pass `-DNGEN_WITH_EXTERN_NOAH_OWP_MODULAR:BOOL=OFF` for Fortran BMI without Noah.
+- The nested `extern/noah-owp-modular/noah-owp-modular` submodule is cloned during configure by
+  `add_external_subdirectory(... GIT_UPDATE ...)`, so no manual `git submodule update` is needed
+  (network access at configure time is, though).
+
+BMI-C is kept ON in the task because the ready-made Noah realization configs are `bmi_multi`
+formulations that also use SLoTH, PET and CFE. To verify the whole stack the way ngen's own
+`.github/workflows/module_integration.yml` job does:
+
+```bash
+./cmake_build/ngen data/catchment_data.geojson "cat-27" data/nexus_data.geojson "nex-26" \
+    data/example_bmi_multi_realization_config_w_noah_pet_cfe.json
+```
+
+That should end with `Finished 720 timesteps.` and write `output_dir/cat-27.csv` (Noah's `QINSUR`
+feeding CFE's runoff columns) plus `output_dir/nex-26_output.csv`. A pile of
+`WARN: Unit conversion unsuccessful ... out_units value none` lines and one
+`surface_partitioning_scheme` deprecation warning are expected and harmless.
+
+> **Caveat:** build the `ngen` target, not the test suites, with this configure. `test_bmi_fortran`
+> does not compile — `test/realizations/catchments/Bmi_Fortran_Formulation_Test.cpp` constructs
+> `forcing_params` with four arguments while the constructor in `include/forcing/AorcForcing.hpp`
+> requires five (`bool enable_cache`, no default). This is pre-existing and not Fortran-specific:
+> `Bmi_C_Formulation_Test.cpp` has the identical stale call. The adapter and formulation code
+> themselves are fine, as the simulation run above demonstrates.
 
 ### UEB (snow model, BMI-C++)
 
@@ -336,11 +408,11 @@ the first component in this repo to need them:
 2. **EWTS** (`extern/ewts`, a pinned submodule of NGWPC's "Error and Warning Trapping System") — a
    hard, non-optional dependency of UEB's `src/CMakeLists.txt` (`find_package(ewts CONFIG
    REQUIRED)`; there's no flag to disable it at the pinned UEB commit). EWTS itself needs
-   `gfortran` and MPI dev libraries (its ngen bridge does `find_package(MPI REQUIRED COMPONENTS
-   CXX)`):
+   `gfortran` (already in the image) and MPI dev libraries (its ngen bridge does
+   `find_package(MPI REQUIRED COMPONENTS CXX)`):
 
    ```bash
-   apt-get update && apt-get install -y --no-install-recommends gfortran libopenmpi-dev openmpi-bin
+   apt-get update && apt-get install -y --no-install-recommends libopenmpi-dev openmpi-bin
    ```
 
    Build and install it with the ngen bridge enabled. `extern/ewts/INSTALL.md` (upstream) says to
@@ -380,7 +452,7 @@ cmake -DCMAKE_BUILD_TYPE=Debug \
       -DNGEN_WITH_SQLITE:BOOL=ON \
       -DNGEN_WITH_UDUNITS:BOOL=ON \
       -DNGEN_WITH_BMI_C:BOOL=ON \
-      -DNGEN_WITH_PYTHON:BOOL=ON \
+      -DNGEN_WITH_PYTHON:BOOL=OFF \
       -DNGEN_WITH_EXTERN_UEB:BOOL=ON \
       -Dewts_DIR=/opt/ewts/lib/cmake/ewts \
       -DCMAKE_POLICY_DEFAULT_CMP0057=NEW \
@@ -389,10 +461,46 @@ cmake -DCMAKE_BUILD_TYPE=Debug \
       -B cmake_build -S .
 ```
 
-The above cmake configuration command for ngen is also wired up as the **CMake: Configure (Full: BMI-C + Python + UEB)** VS Code task (with
-matching **Setup: Build Boost with serialization (UEB)** / **Setup: Build and install EWTS (UEB)**
-tasks for steps 1–2 above) — run those two setup tasks (BOOST and EWTS) once, then this configure task (ngen), then the
-usual **Build ngen (CMake)** task.
+`NGEN_WITH_PYTHON` is OFF here for the same reason as in the Noah section above: UEB is a `bmi_c++`
+model that needs nothing from Python, and `ON` would fail configure with
+`Could NOT find Python (missing: Python_NumPy_INCLUDE_DIRS NumPy)` unless a `numpy<2.0` venv is
+active in the shell the task runs in. Note that a venv created on a macOS host (e.g. a `.venv/` in
+the repo, which is bind-mounted into the container) is *not* usable inside the Linux container —
+it would have to be created in the container.
+
+The above cmake configuration command for ngen is also wired up as the **CMake: Configure (BMI-C +
+UEB)** VS Code task (with matching **Setup: Build Boost with serialization (UEB)** /
+**Setup: Build and install EWTS (UEB)** tasks for steps 1–2 above) — run those two setup tasks
+(BOOST and EWTS) once, then this configure task (ngen), then the usual **Build ngen (CMake)** task.
+
+### Everything at once
+
+For a runtime with every model component this image supports, run the three setup tasks once, in
+this order, then the **CMake: Configure (Everything)** task:
+
+1. **Setup: Python venv (numpy<2)** — `.venv-linux` + `extern/pybind11`
+2. **Setup: Build Boost with serialization (UEB)** — `/opt/boost-built`
+3. **Setup: Build and install EWTS (UEB)** — `/opt/ewts`
+
+The configure task checks all three up front and names the missing one rather than failing inside
+CMake. It uses `/opt/boost-built` as `BOOST_ROOT` throughout: UEB needs that compiled Boost, and it
+serves the rest of the build too. Then build — **Build ngen (CMake)** keeps this configuration, or
+from a terminal, to get the two extra model libraries in one go:
+
+```bash
+cmake --build cmake_build --target ngen bmiuebcxx surfacebmi -j $(nproc)
+```
+
+`./cmake_build/ngen --info` should then report `BMI_FORTRAN: ON`, `BMI_C: ON`, `PYTHON: ON`,
+`ROUTING: ON` and extern models `SLOTH`, `TOPMODEL`, `CFE`, `PET`, `NOAH_OWP_MODULAR`, `UEB` all ON.
+
+Two things this does **not** include:
+
+- **MPI** — no runtime in the image; see [MPI / distributed processing](#mpi--distributed-processing).
+- **SMP / SoilFreezeThaw** — `NGEN_WITH_EXTERN_SMP` / `NGEN_WITH_EXTERN_SFT` are independent options
+  that default OFF and aren't covered by any task here. Add `-DNGEN_WITH_EXTERN_SMP:BOOL=ON
+  -DNGEN_WITH_EXTERN_SFT:BOOL=ON` to the configure command if you need them (untested in this
+  setup).
 
 ---
 
@@ -430,13 +538,42 @@ is only guaranteed at `$BOOST_ROOT` inside this project's devcontainer image.
 **Solution**: Make sure the VS Code status bar shows you're connected to the Dev Container before
 building.
 
-#### 4. CMake configure fails: `Could NOT find Python` / NumPy version errors
+#### 3b. CMake configure fails: `Found unsuitable version "0.0.0"` with `version.hpp cannot be read`
 
-**Cause**: You ran the "Full: BMI-C + Python" configure task without first setting up a venv with
-`numpy<2.0` active (see [Enabling Optional Components](#enabling-optional-components)).
+```text
+file STRINGS file "/opt/boost-built/include/boost/version.hpp" cannot be read.
+Could NOT find Boost: Found unsuitable version "0.0.0", but required is at least "1.79.0"
+  (found /opt/boost-built/include, )
+```
 
-**Solution**: Activate a venv with the right NumPy version, then re-run the Configure task from an
-integrated terminal that has that venv active.
+**Cause**: A *partial* Boost installation. `b2 install` copies headers roughly alphabetically, so
+an interrupted or failed **Setup: Build Boost with serialization (UEB)** task leaves early-alphabet
+headers (`config.hpp`) in place but never writes `version.hpp`. FindBoost locates the include
+directory, then can't determine a version from it. Two ways it reaches a configure that isn't even
+UEB-related: the UEB configure task points `BOOST_ROOT` there by design, and all configure tasks
+share one `cmake_build`, so a cached `Boost_INCLUDE_DIR` from a previous UEB configure can be
+picked up by a later one.
+
+**Solution**: Run **Clean ngen** to drop the stale cache, then re-run your configure task. If you
+do want UEB, re-run the Boost setup task and let it finish — it now verifies `version.hpp` landed
+and fails loudly if it didn't. The configure tasks also check this up front, so you get a message
+naming the task to run instead of the CMake error above.
+
+#### 4. CMake configure fails: `Could NOT find Python (missing: Python_NumPy_INCLUDE_DIRS NumPy)`
+
+**Cause**: An `NGEN_WITH_PYTHON=ON` configure ran without a `numpy<2.0` virtualenv active in *the
+shell the task ran in*. A task launched from the Command Palette does **not** inherit a venv you
+activated in an integrated terminal. Note also that a `.venv/` created on a macOS host is
+bind-mounted into the container but its binaries can't execute there.
+
+**Solution**: Run the **Setup: Python venv (numpy<2)** task once — it creates a container-side
+`.venv-linux` and initializes `extern/pybind11`. The **CMake: Configure (Full: BMI-C + Python)**
+task activates that venv itself, and refuses to run with a message pointing at the setup task if
+it's missing. Activate it yourself (`source .venv-linux/bin/activate`) before *running* an ngen
+built with embedded Python, since CMake binds to the interpreter present at configure time.
+
+Only the Python task needs this. The **BMI-C + Fortran/Noah** and **BMI-C + UEB** tasks have
+`NGEN_WITH_PYTHON=OFF` — neither model needs Python — so they run with no venv at all.
 
 #### 5. Breakpoints aren't hit / gdb can't attach
 
