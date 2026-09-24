@@ -1,0 +1,22 @@
+{
+  "_comment": [
+    "Registry of Python BMI wrapper packages usable for introspection.",
+    "Paths are relative to the ngen repo root. JSON rather than TOML because the",
+    "devcontainer ships Python 3.10, which has no stdlib tomllib.",
+    "To add a model: add a block here and a line in requirements.txt. No code changes."
+  ],
+
+  "cfe": {
+    "description": "Conceptual Functional Equivalent (NOAA-OWP/cfe), via pymt_cfe",
+    "distribution": "pymt_cfe",
+    "import_path": "pymt_cfe",
+    "class_name": "CFE",
+    "lib_file": "extern/cfe/cmake_build/libcfebmi.so",
+    "build_env": {
+      "CFE_ROOT": "extern/cfe/cfe",
+      "CFE_LIB_DIR": "extern/cfe/cmake_build"
+    },
+    "sample_config": "data/gauge_01073000/CFE/cat-11223_bmi_config_cfe_pass.txt",
+    "realization_model_types": ["bmi_c_cfe", "cfe"]
+  }
+}

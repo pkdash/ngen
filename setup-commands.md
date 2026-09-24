@@ -147,6 +147,33 @@ Should report `BMI_FORTRAN: ON`, `BMI_C: ON`, `PYTHON: ON`, `ROUTING: ON`, and e
 
 ---
 
+## BMI wrapper tooling (optional)
+
+Asks a model what it actually consumes and produces, by querying the compiled
+model through a Python BMI wrapper. Introspection only — it does not change how
+ngen runs, and is independent of which configure you used.
+
+Order matters: the wrapper is a C extension that links CFE's shared library.
+
+```bash
+make -C commands setup-venv            # if you have not already
+make -C commands build-cfe-lib         # extern/cfe -> libcfebmi.so
+make -C commands install-bmi-wrappers  # pip install into .venv-linux
+```
+
+Then:
+
+```bash
+make -C commands bmi-io                                     # CFE inputs/outputs
+make -C commands bmi-io REALIZATION=data/example_bmi_multi_realization_config_w_noah_pet_cfe.json
+```
+
+The second form cross-checks a realization config's `variables_names_map` against
+the model's real variables and exits non-zero on a genuine error. See
+[tools/bmi-wrappers/README.md](tools/bmi-wrappers/README.md).
+
+---
+
 ## Notes
 
 - `Cmd/Ctrl+Shift+B` runs **Build ngen (CMake)** → `make -C commands build`; it only auto-configures
@@ -162,4 +189,6 @@ Should report `BMI_FORTRAN: ON`, `BMI_C: ON`, `PYTHON: ON`, `ROUTING: ON`, and e
   interpreter present at configure time.
 - Other example configs are documented in [data/README.md](data/README.md); debug configurations in
   [.vscode/launch.json](.vscode/launch.json).
+- The BMI wrapper tooling installs into the same `.venv-linux`, but is never imported by
+  the `ngen` binary — it is a developer aid, not part of any build.
 - Not covered here: MPI, and the `NGEN_WITH_EXTERN_SMP` / `NGEN_WITH_EXTERN_SFT` models.

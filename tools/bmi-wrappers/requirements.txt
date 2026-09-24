@@ -1,0 +1,13 @@
+# Python BMI wrapper packages, installed into .venv-linux for introspection only.
+# ngen itself still runs these models through its C/Fortran BMI adapters; nothing
+# here is imported by the ngen binary.
+#
+# Each of these is a compiled extension that links the model's BMI shared library
+# at build time, so the corresponding lib_file in wrappers.json must exist before
+# pip runs. `make -C commands install-bmi-wrappers` enforces that ordering.
+
+pymt_cfe @ git+https://github.com/pkdash/BMI.git@pymt_cfe-v0.2.0#subdirectory=CFE/pymt_cfe
+
+# Pending upstream: not yet verified against ngen's extern/ builds.
+# pymt_noah_owp @ git+https://github.com/pkdash/BMI.git@<rev>#subdirectory=NOAH_OWP/pymt_noah_owp
+# pymt_sft      @ git+https://github.com/pkdash/BMI.git@<rev>#subdirectory=SOIL-FREEZE-THAW/pymt_sft

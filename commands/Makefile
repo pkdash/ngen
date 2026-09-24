@@ -32,6 +32,14 @@ BOOST_BUILT  := /opt/boost-built
 EWTS_PREFIX  := /opt/ewts
 VENV         := .venv-linux
 
+# CFE, built standalone so the Python BMI wrapper can link it. Separate from
+# $(BUILD_DIR): extern/cfe is its own CMake project, not part of the ngen build.
+CFE_BUILD_DIR := extern/cfe/cmake_build
+CFE_LIB       := $(ROOT)/$(CFE_BUILD_DIR)/libcfebmi.so
+
+# Overridable like TARGETS, for the bmi-io target.
+MODEL        ?= cfe
+
 # Targets `make build` passes to cmake --build. Override per configuration, e.g.
 #     make -C commands build TARGETS="ngen bmiuebcxx surfacebmi"
 TARGETS      ?= ngen testbmicppmodel
@@ -78,6 +86,12 @@ define require_boost_built
 	    exit 1; }
 endef
 
+define require_cfe_lib
+	@[ -r "$(CFE_LIB)" ] || { \
+	    echo "ERROR: $(CFE_BUILD_DIR)/libcfebmi.so not found. The Python CFE wrapper is a C extension that links it at build time — run 'make -C commands build-cfe-lib' first."; \
+	    exit 1; }
+endef
+
 define require_ewts
 	@[ -d "$(EWTS_PREFIX)" ] || { \
 	    echo "ERROR: $(EWTS_PREFIX) not found. Run 'make -C commands setup-ewts' first."; \
@@ -113,6 +127,11 @@ help:
 	@echo "  clean               Remove $(BUILD_DIR)"
 	@echo "  rebuild             clean, then build"
 	@echo "  show-config         Print the optional components the current $(BUILD_DIR) was configured with"
+	@echo
+	@echo "BMI wrapper tooling (Python introspection; does not affect the ngen binary):"
+	@echo "  build-cfe-lib         Build extern/cfe standalone -> $(CFE_BUILD_DIR)/libcfebmi.so"
+	@echo "  install-bmi-wrappers  pip install the wrappers into $(VENV)   needs: setup-venv, build-cfe-lib"
+	@echo "  bmi-io                Show a model's BMI inputs/outputs: make -C commands bmi-io MODEL=cfe [CONFIG=...] [REALIZATION=...]"
 	@echo
 	@echo "Build targets per configuration:"
 	@echo "  default   TARGETS=\"ngen testbmicppmodel\"       ueb   TARGETS=\"ngen bmiuebcxx\""
@@ -276,3 +295,45 @@ clean:
 rebuild:
 	@$(MAKE) -f $(MAKEFILE_PATH) clean
 	@$(MAKE) -f $(MAKEFILE_PATH) build
+
+# ---------------------------------------------------------------------------
+# BMI wrapper tooling
+#
+# The Python BMI wrappers are introspection helpers only: they let you ask a
+# model what it actually consumes and produces. ngen keeps running these models
+# through its own C/Fortran adapters, and nothing here is imported by the ngen
+# binary. See tools/bmi-wrappers/README.md.
+# ---------------------------------------------------------------------------
+
+# extern/cfe is a standalone CMake project (not part of the ngen build), and
+# builds libcfebmi as SHARED on every non-Windows platform with no options.
+.PHONY: build-cfe-lib
+build-cfe-lib:
+	cd $(ROOT) && git submodule update --init --recursive -- extern/cfe && \
+	cmake -S extern/cfe -B $(CFE_BUILD_DIR) && \
+	cmake --build $(CFE_BUILD_DIR) -- -j $(JOBS)
+
+# CFE_ROOT/CFE_LIB_DIR are what pymt_cfe's setup.py looks for; PKG_CONFIG_PATH
+# picks up the cfebmi.pc the CFE build emits, as a second discovery route.
+.PHONY: install-bmi-wrappers
+install-bmi-wrappers:
+	$(require_venv)
+	$(require_cfe_lib)
+	cd $(ROOT) && \
+	CFE_ROOT="$(ROOT)/extern/cfe/cfe" \
+	CFE_LIB_DIR="$(ROOT)/$(CFE_BUILD_DIR)" \
+	PKG_CONFIG_PATH="$(ROOT)/$(CFE_BUILD_DIR):$$PKG_CONFIG_PATH" \
+	$(VENV)/bin/pip install -r tools/bmi-wrappers/requirements.txt
+	@echo -n "wrappers ready: " && \
+	    cd $(ROOT) && $(VENV)/bin/python tools/bmi-wrappers/bmi_introspect.py list
+
+# CONFIG and REALIZATION are optional; without CONFIG the registry's sample is
+# used. Exits non-zero when a REALIZATION cross-check finds a real error.
+.PHONY: bmi-io
+bmi-io:
+	$(require_venv)
+	@cd $(ROOT) && $(VENV)/bin/python tools/bmi-wrappers/bmi_introspect.py $(MODEL) \
+	    $(if $(CONFIG),--config $(CONFIG)) \
+	    $(if $(REALIZATION),--realization $(REALIZATION)) \
+	    $(if $(CATCHMENT),--catchment $(CATCHMENT)) \
+	    $(BMI_IO_FLAGS)

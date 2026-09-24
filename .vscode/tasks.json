@@ -147,6 +147,39 @@
             "detail": "Removes the cmake_build directory entirely. Also the fix when a configure task picks up stale cached paths from a different configure task — they all share one cmake_build."
         },
         {
+            "label": "Setup: Build CFE shared library",
+            "type": "process",
+            "command": "make",
+            "args": ["-C", "commands", "build-cfe-lib"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": ["$gcc"],
+            "detail": "Builds extern/cfe as its own CMake project into extern/cfe/cmake_build, producing libcfebmi.so and cfebmi.pc. Needed before installing the Python CFE BMI wrapper, which is a C extension that links that library at build time. Independent of the ngen build in cmake_build."
+        },
+        {
+            "label": "Setup: Install BMI Python wrappers",
+            "type": "process",
+            "command": "make",
+            "args": ["-C", "commands", "install-bmi-wrappers"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "detail": "pip installs the Python BMI wrapper packages from tools/bmi-wrappers/requirements.txt into .venv-linux, exporting the CFE_ROOT/CFE_LIB_DIR that pymt_cfe's setup.py needs. Run the Setup: Python venv and Setup: Build CFE shared library tasks first. These wrappers are introspection helpers only -- ngen still runs CFE through its C BMI adapter, and nothing here is imported by the ngen binary."
+        },
+        {
+            "label": "BMI: Show CFE input/output requirements",
+            "type": "process",
+            "command": "make",
+            "args": ["-C", "commands", "bmi-io"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "detail": "Queries the CFE model live for its BMI inputs and outputs with units, types, and grids, using the sample config in tools/bmi-wrappers/wrappers.json. For other models, or to cross-check an ngen realization config, run it from a terminal: make -C commands bmi-io MODEL=cfe CONFIG=... REALIZATION=..."
+        },
+        {
             "label": "Rebuild ngen",
             "type": "process",
             "command": "make",

@@ -502,6 +502,33 @@ Two things this does **not** include:
   -DNGEN_WITH_EXTERN_SFT:BOOL=ON` to the configure command if you need them (untested in this
   setup).
 
+### BMI wrapper tooling (model I/O introspection)
+
+Orthogonal to every configure above: a way to ask a model what it actually consumes and produces,
+rather than reading `extern/cfe/cfe/src/bmi_cfe.c` to find out. It works by importing a Python BMI
+wrapper for the model and querying it live.
+
+This is a developer aid. ngen still runs CFE through its C BMI adapter; nothing installed here is
+imported by the `ngen` binary, and it does not require `NGEN_WITH_PYTHON=ON`.
+
+The wrapper is a C extension that links CFE's shared library, so the order is fixed:
+
+1. **Setup: Python venv (numpy<2)** — `.venv-linux` (skip if you already have it)
+2. **Setup: Build CFE shared library** — `extern/cfe/cmake_build/libcfebmi.so`
+3. **Setup: Install BMI Python wrappers** — pip installs into `.venv-linux`
+
+Then **BMI: Show CFE input/output requirements**, or from a terminal:
+
+```bash
+make -C commands bmi-io
+make -C commands bmi-io REALIZATION=data/example_bmi_multi_realization_config_w_noah_pet_cfe.json
+```
+
+The `REALIZATION=` form cross-checks a realization config's `variables_names_map` against the
+model's real variables, flags typos with a "did you mean", and exits non-zero on a genuine error.
+Full details, and how to add wrappers for other models, in
+[tools/bmi-wrappers/README.md](tools/bmi-wrappers/README.md).
+
 ---
 
 ## Troubleshooting
@@ -598,6 +625,23 @@ data, nexus subset, realization config), plus optional partition config /
 `--subdivided-hydrofabric`. If you're using the debug launch config, this shouldn't happen — `args`
 is already set correctly. If running manually, see [Running with Example Data](#running-with-example-data)
 or `README.md`'s [Usage](README.md#usage) section.
+
+---
+
+#### 8. `ImportError: libcfebmi.so: cannot open shared object file`
+
+**Cause**: The Python CFE wrapper resolves `libcfebmi.so` through an RPATH baked in when it was
+installed, pointing at `extern/cfe/cmake_build`. Deleting or moving that directory — a
+`make -C commands clean` does not touch it, but removing `extern/cfe/cmake_build` by hand does —
+breaks the installed module.
+
+**Solution**: Rebuild the library and reinstall the wrapper, so the RPATH is re-baked:
+```bash
+make -C commands build-cfe-lib
+make -C commands install-bmi-wrappers
+```
+Setting `LD_LIBRARY_PATH` also works, but reinstalling is preferred — it keeps the module
+self-contained for every future shell.
 
 ---
 
