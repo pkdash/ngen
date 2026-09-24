@@ -68,6 +68,28 @@ make --no-print-directory -C commands bmi-io MODEL=cfe BMI_IO_FLAGS=--json | pyt
 Calling the script directly (as above) doesn't have this problem, since there's no `make -C`
 in the way.
 
+## Direct access
+
+The wrapper packages are ordinary Python objects — the CLI is a convenience layer
+over them, not the only way in. For a one-off getter, or a method the CLI doesn't
+expose (`update()`, stepping through time, etc.), drive the model directly:
+
+```python
+.venv-linux/bin/python
+>>> from pymt_cfe import CFE
+>>> model = CFE()
+>>> model.initialize("path/to/cat-N_bmi_config_cfe.txt")   # required before most getters work
+>>> dir(model)
+>>> model.get_component_name()
+>>> model.get_input_var_names()
+>>> model.get_output_var_names()
+>>> model.get_var_units("some_var")
+```
+
+Same rule as everywhere else in this README: there's no static metadata, so most
+getters raise or return meaningless data until `initialize()` has run against a real
+config.
+
 ### Cross-checking a realization config
 
 With `--realization`, the tool compares what the model really needs against how a
