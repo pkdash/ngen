@@ -7,7 +7,7 @@
 # pip runs. `make -C commands install-bmi-wrappers` enforces that ordering.
 
 pymt_cfe @ git+https://github.com/pkdash/BMI.git@pymt_cfe-v0.2.0#subdirectory=CFE/pymt_cfe
+pymt_noah_owp @ git+https://github.com/pkdash/BMI.git@pymt_noah_owp-v0.2.0#subdirectory=NOAH_OWP/pymt_noah_owp
 
 # Pending upstream: not yet verified against ngen's extern/ builds.
-# pymt_noah_owp @ git+https://github.com/pkdash/BMI.git@<rev>#subdirectory=NOAH_OWP/pymt_noah_owp
 # pymt_sft      @ git+https://github.com/pkdash/BMI.git@<rev>#subdirectory=SOIL-FREEZE-THAW/pymt_sft

@@ -158,6 +158,17 @@
             "detail": "Builds extern/cfe as its own CMake project into extern/cfe/cmake_build, producing libcfebmi.so and cfebmi.pc. Needed before installing the Python CFE BMI wrapper, which is a C extension that links that library at build time. Independent of the ngen build in cmake_build."
         },
         {
+            "label": "Setup: Build Noah-OWP-Modular shared library",
+            "type": "process",
+            "command": "make",
+            "args": ["-C", "commands", "build-noah-lib"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": ["$gcc"],
+            "detail": "Reconfigures the same cmake_build every configure task uses, with the Fortran configure's flags, then builds only the surfacebmi target -- there is no isolated build dir to use instead, since extern/noah-owp-modular's own CMakeLists always places its build output at a fixed path under extern/ regardless of which top build dir triggered the configure. If cmake_build was configured differently (e.g. the Python configure), this reverts it to the Fortran flags, same as running any other configure task would; run Clean ngen first for a from-scratch reconfigure. Needed because extern/noah-owp-modular's own CMakeLists only links iso_c_bmi and skips NetCDF inside the NGEN_IS_MAIN_PROJECT branch -- a standalone configure of that subdirectory alone hits the broken else-branch instead. Produces extern/noah-owp-modular/cmake_build/libsurfacebmi.so, needed before installing the Python Noah BMI wrapper, which is a Fortran extension that links that library at build time."
+        },
+        {
             "label": "Setup: Install BMI Python wrappers",
             "type": "process",
             "command": "make",
@@ -166,18 +177,18 @@
                 "cwd": "${workspaceFolder}"
             },
             "problemMatcher": [],
-            "detail": "pip installs the Python BMI wrapper packages from tools/bmi-wrappers/requirements.txt into .venv-linux, exporting the CFE_ROOT/CFE_LIB_DIR that pymt_cfe's setup.py needs. Run the Setup: Python venv and Setup: Build CFE shared library tasks first. These wrappers are introspection helpers only -- ngen still runs CFE through its C BMI adapter, and nothing here is imported by the ngen binary."
+            "detail": "pip installs each Python BMI wrapper package from tools/bmi-wrappers/requirements.txt into .venv-linux individually, gated on its own shared library already being built -- a missing Noah lib only skips Noah's wrapper (with a note on what to run first) rather than blocking CFE's install too, and vice versa. Exports the CFE_ROOT/CFE_LIB_DIR that pymt_cfe's setup.py needs and the NOAH_ROOT/NOAH_LIB_DIR/NOAH_MOD_DIR that pymt_noah_owp's setup.py needs. Run the Setup: Python venv task first, plus whichever of Setup: Build CFE shared library / Setup: Build Noah-OWP-Modular shared library correspond to the wrapper(s) you want. These wrappers are introspection helpers only -- ngen still runs these models through its own BMI adapters, and nothing here is imported by the ngen binary."
         },
         {
-            "label": "BMI: Show CFE input/output requirements",
+            "label": "BMI: Show model input/output requirements",
             "type": "process",
             "command": "make",
-            "args": ["-C", "commands", "bmi-io"],
+            "args": ["-C", "commands", "bmi-io", "MODEL=${input:bmiModel}"],
             "options": {
                 "cwd": "${workspaceFolder}"
             },
             "problemMatcher": [],
-            "detail": "Queries the CFE model live for its BMI inputs and outputs with units, types, and grids, using the sample config in tools/bmi-wrappers/wrappers.json. For other models, or to cross-check an ngen realization config, run it from a terminal: make -C commands bmi-io MODEL=cfe CONFIG=... REALIZATION=..."
+            "detail": "Queries the chosen model live for its BMI inputs and outputs with units, types, and grids, using the sample config registered for it in tools/bmi-wrappers/wrappers.json. To also cross-check an ngen realization config, run it from a terminal instead: make -C commands bmi-io MODEL=cfe|noah CONFIG=... REALIZATION=..."
         },
         {
             "label": "Rebuild ngen",
@@ -197,6 +208,13 @@
             "type": "promptString",
             "description": "CMake target name to build, which is also the resulting test binary name under cmake_build/test/ (see test/CMakeLists.txt for the full list, e.g. test_partition, test_nexus, test_geojson, test_mdarray, test_logging). Must match what you enter for the launch config's own prompt.",
             "default": "test_unit"
+        },
+        {
+            "id": "bmiModel",
+            "type": "pickString",
+            "description": "Which model's BMI wrapper to query (key from tools/bmi-wrappers/wrappers.json)",
+            "options": ["cfe", "noah"],
+            "default": "cfe"
         }
     ]
 }

@@ -37,6 +37,22 @@ VENV         := .venv-linux
 CFE_BUILD_DIR := extern/cfe/cmake_build
 CFE_LIB       := $(ROOT)/$(CFE_BUILD_DIR)/libcfebmi.so
 
+# Noah-OWP-Modular. Unlike CFE, extern/noah-owp-modular is not a standalone
+# CMake project: its CMakeLists only links iso_c_bmi and skips NetCDF
+# discovery inside the NGEN_IS_MAIN_PROJECT branch, so `cmake -S
+# extern/noah-owp-modular` alone hits its broken else-branch instead (needs
+# NetCDF). So build-noah-lib reconfigures the SAME $(BUILD_DIR) as every other
+# configure target, with configure-fortran's flags, rather than a separate
+# build dir: add_external_subdirectory always passes
+# extern/noah-owp-modular/cmake_build (and extern/iso_c_fortran_bmi/cmake_build
+# for iso_c_bmi) as those targets' own binary dirs, as a FIXED path outside of
+# whichever top build dir triggered the configure — so a separate build dir
+# would not actually be isolated from $(BUILD_DIR) at all, just an illusion of
+# one. This means build-noah-lib can revert $(BUILD_DIR)'s active flags the
+# same way switching between configure-python/configure-fortran/etc. already
+# does; `make -C commands clean` is the fix if that surprises you.
+NOAH_LIB := $(ROOT)/extern/noah-owp-modular/cmake_build/libsurfacebmi.so
+
 # Overridable like TARGETS, for the bmi-io target.
 MODEL        ?= cfe
 
@@ -86,12 +102,6 @@ define require_boost_built
 	    exit 1; }
 endef
 
-define require_cfe_lib
-	@[ -r "$(CFE_LIB)" ] || { \
-	    echo "ERROR: $(CFE_BUILD_DIR)/libcfebmi.so not found. The Python CFE wrapper is a C extension that links it at build time — run 'make -C commands build-cfe-lib' first."; \
-	    exit 1; }
-endef
-
 define require_ewts
 	@[ -d "$(EWTS_PREFIX)" ] || { \
 	    echo "ERROR: $(EWTS_PREFIX) not found. Run 'make -C commands setup-ewts' first."; \
@@ -130,8 +140,9 @@ help:
 	@echo
 	@echo "BMI wrapper tooling (Python introspection; does not affect the ngen binary):"
 	@echo "  build-cfe-lib         Build extern/cfe standalone -> $(CFE_BUILD_DIR)/libcfebmi.so"
-	@echo "  install-bmi-wrappers  pip install the wrappers into $(VENV)   needs: setup-venv, build-cfe-lib"
-	@echo "  bmi-io                Show a model's BMI inputs/outputs: make -C commands bmi-io MODEL=cfe [CONFIG=...] [REALIZATION=...]"
+	@echo "  build-noah-lib        Build surfacebmi via a full ngen configure -> extern/noah-owp-modular/cmake_build/libsurfacebmi.so"
+	@echo "  install-bmi-wrappers  pip install the wrappers into $(VENV)   needs: setup-venv, build-cfe-lib, build-noah-lib"
+	@echo "  bmi-io                Show a model's BMI inputs/outputs: make -C commands bmi-io MODEL=cfe|noah [CONFIG=...] [REALIZATION=...]"
 	@echo
 	@echo "Build targets per configuration:"
 	@echo "  default   TARGETS=\"ngen testbmicppmodel\"       ueb   TARGETS=\"ngen bmiuebcxx\""
@@ -313,17 +324,59 @@ build-cfe-lib:
 	cmake -S extern/cfe -B $(CFE_BUILD_DIR) && \
 	cmake --build $(CFE_BUILD_DIR) -- -j $(JOBS)
 
-# CFE_ROOT/CFE_LIB_DIR are what pymt_cfe's setup.py looks for; PKG_CONFIG_PATH
-# picks up the cfebmi.pc the CFE build emits, as a second discovery route.
+# Full ngen configure (not standalone, unlike CFE) with NGEN_WITH_BMI_FORTRAN
+# so NGEN_IS_MAIN_PROJECT's branch links iso_c_bmi; only the surfacebmi target
+# (and its dependency iso_c_bmi) is actually built. Reconfigures the SHARED
+# $(BUILD_DIR) with configure-fortran's flags -- there is no isolated build dir
+# to use instead, since extern/noah-owp-modular's and extern/iso_c_fortran_bmi's
+# own CMakeLists always place their build output at a fixed path under extern/,
+# regardless of which top build dir triggered the configure. If $(BUILD_DIR)
+# was configured differently (e.g. configure-python), this reverts it to the
+# Fortran flags, same as running any other configure-* target would; run
+# 'make -C commands clean' first if you want a from-scratch reconfigure.
+.PHONY: build-noah-lib
+build-noah-lib:
+	$(require_boost_headers)
+	cd $(ROOT) && git submodule update --init --recursive -- extern/noah-owp-modular extern/iso_c_fortran_bmi && \
+	cmake -S . -B $(BUILD_DIR) $(COMMON_FLAGS) \
+	    -DBOOST_ROOT="$(BOOST_ROOT)" \
+	    -DNGEN_WITH_BMI_C:BOOL=ON \
+	    -DNGEN_WITH_BMI_FORTRAN:BOOL=ON \
+	    -DNGEN_WITH_PYTHON:BOOL=OFF && \
+	cmake --build $(BUILD_DIR) --target surfacebmi -- -j $(JOBS)
+
+# Each wrapper is installed individually, gated on its own lib, rather than one
+# `pip install -r requirements.txt`: with a single combined install, a missing
+# Noah lib would fail the whole command and block installing CFE's wrapper too
+# (and vice versa). CFE_ROOT/CFE_LIB_DIR are what pymt_cfe's setup.py looks
+# for; PKG_CONFIG_PATH picks up the cfebmi.pc the CFE build emits, as a second
+# discovery route. NOAH_ROOT/NOAH_LIB_DIR/NOAH_MOD_DIR are what
+# pymt_noah_owp's setup.py looks for; it has no pkg-config fallback, so these
+# must be exported explicitly.
 .PHONY: install-bmi-wrappers
 install-bmi-wrappers:
 	$(require_venv)
-	$(require_cfe_lib)
-	cd $(ROOT) && \
-	CFE_ROOT="$(ROOT)/extern/cfe/cfe" \
-	CFE_LIB_DIR="$(ROOT)/$(CFE_BUILD_DIR)" \
-	PKG_CONFIG_PATH="$(ROOT)/$(CFE_BUILD_DIR):$$PKG_CONFIG_PATH" \
-	$(VENV)/bin/pip install -r tools/bmi-wrappers/requirements.txt
+	@installed=0; \
+	cd $(ROOT); \
+	if [ -r "$(CFE_LIB)" ]; then \
+	    CFE_ROOT="$(ROOT)/extern/cfe/cfe" \
+	    CFE_LIB_DIR="$(ROOT)/$(CFE_BUILD_DIR)" \
+	    PKG_CONFIG_PATH="$(ROOT)/$(CFE_BUILD_DIR):$$PKG_CONFIG_PATH" \
+	    $(VENV)/bin/pip install "$$(grep '^pymt_cfe ' tools/bmi-wrappers/requirements.txt)" \
+	        && installed=$$((installed + 1)); \
+	else \
+	    echo "SKIP pymt_cfe: $(CFE_BUILD_DIR)/libcfebmi.so not found -- run 'make -C commands build-cfe-lib' first"; \
+	fi; \
+	if [ -r "$(NOAH_LIB)" ]; then \
+	    NOAH_ROOT="$(ROOT)/extern/noah-owp-modular/noah-owp-modular" \
+	    NOAH_LIB_DIR="$(ROOT)/extern/noah-owp-modular/cmake_build" \
+	    NOAH_MOD_DIR="$(ROOT)/extern/noah-owp-modular/cmake_build/mod" \
+	    $(VENV)/bin/pip install "$$(grep '^pymt_noah_owp ' tools/bmi-wrappers/requirements.txt)" \
+	        && installed=$$((installed + 1)); \
+	else \
+	    echo "SKIP pymt_noah_owp: extern/noah-owp-modular/cmake_build/libsurfacebmi.so not found -- run 'make -C commands build-noah-lib' first"; \
+	fi; \
+	[ "$$installed" -gt 0 ] || echo "WARNING: no wrapper's shared library was built yet -- nothing installed"
 	@echo -n "wrappers ready: " && \
 	    cd $(ROOT) && $(VENV)/bin/python tools/bmi-wrappers/bmi_introspect.py list
 

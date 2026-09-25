@@ -504,23 +504,37 @@ Two things this does **not** include:
 
 ### BMI wrapper tooling (model I/O introspection)
 
-Orthogonal to every configure above: a way to ask a model what it actually consumes and produces,
-rather than reading `extern/cfe/cfe/src/bmi_cfe.c` to find out. It works by importing a Python BMI
-wrapper for the model and querying it live.
+A way to ask a model what it actually consumes and produces, rather than reading
+`extern/cfe/cfe/src/bmi_cfe.c` (or Noah-OWP-Modular's
+`extern/noah-owp-modular/noah-owp-modular/bmi/bmi_noahowp.f90`) to find out. It works by importing a
+Python BMI wrapper for the model and querying it live. CFE's half is fully orthogonal to every
+configure above (`extern/cfe` is its own standalone CMake project); Noah's half is not — see step 3
+below.
 
-This is a developer aid. ngen still runs CFE through its C BMI adapter; nothing installed here is
-imported by the `ngen` binary, and it does not require `NGEN_WITH_PYTHON=ON`.
+This is a developer aid. ngen still runs these models through its own C/Fortran BMI adapters;
+nothing installed here is imported by the `ngen` binary, and it does not require
+`NGEN_WITH_PYTHON=ON`.
 
-The wrapper is a C extension that links CFE's shared library, so the order is fixed:
+Each wrapper is an extension that links its model's shared library, so the order is fixed:
 
 1. **Setup: Python venv (numpy<2)** — `.venv-linux` (skip if you already have it)
 2. **Setup: Build CFE shared library** — `extern/cfe/cmake_build/libcfebmi.so`
-3. **Setup: Install BMI Python wrappers** — pip installs into `.venv-linux`
+3. **Setup: Build Noah-OWP-Modular shared library** — `extern/noah-owp-modular/cmake_build/libsurfacebmi.so`
+   (reconfigures the same `cmake_build` every configure task uses, with the Fortran configure's
+   flags, then builds only `surfacebmi` — Noah's own `CMakeLists.txt` only builds correctly as part
+   of the main project, unlike CFE, and its build output always lands at a fixed path under
+   `extern/` regardless of which build dir triggered the configure, so there is no isolated build
+   dir to use instead. Reverts `cmake_build`'s active configuration to the Fortran flags if it was
+   something else; **Clean ngen** first for a from-scratch reconfigure.)
+4. **Setup: Install BMI Python wrappers** — pip installs into `.venv-linux`, one wrapper at a time,
+   gated on each wrapper's own shared library already existing (a missing Noah lib only skips
+   Noah's wrapper, not CFE's)
 
-Then **BMI: Show CFE input/output requirements**, or from a terminal:
+Then **BMI: Show model input/output requirements**, or from a terminal:
 
 ```bash
 make -C commands bmi-io
+make -C commands bmi-io MODEL=noah CONFIG=data/gauge_01073000/NOAH/cat-11223.input
 make -C commands bmi-io REALIZATION=data/example_bmi_multi_realization_config_w_noah_pet_cfe.json
 ```
 
@@ -642,6 +656,23 @@ make -C commands install-bmi-wrappers
 ```
 Setting `LD_LIBRARY_PATH` also works, but reinstalling is preferred — it keeps the module
 self-contained for every future shell.
+
+---
+
+#### 9. Installing `pymt_noah_owp` fails while compiling `bmi_interoperability.f90`, or it imports but every call segfaults
+
+**Cause**: `pymt_noah_owp`'s Cython wrapper compiles its own `bmi_interoperability.f90` shim against
+the `.mod` files under `extern/noah-owp-modular/cmake_build/mod/` (`bmif_2_0.mod`, `bminoahowp.mod`).
+Fortran module files are compiler- and version-specific — if the gfortran used to build the wrapper
+differs from the one that built `libsurfacebmi.so`, the mismatch either fails at compile time with an
+unreadable/incompatible `.mod` error, or — worse — compiles but produces a binary whose ABI
+assumptions don't match the library, which can crash or silently misread data at runtime instead of
+failing cleanly.
+
+**Solution**: Rebuild both with the same toolchain — inside the devcontainer, `build-noah-lib` and
+`install-bmi-wrappers` both use whatever `gfortran`/`FC` is on `PATH`, so as long as you haven't
+mixed a host-built library with a container-built wrapper (or vice versa), this shouldn't happen. If
+it does, `make -C commands build-noah-lib` again before reinstalling the wrapper.
 
 ---
 

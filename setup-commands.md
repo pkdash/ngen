@@ -151,20 +151,33 @@ Should report `BMI_FORTRAN: ON`, `BMI_C: ON`, `PYTHON: ON`, `ROUTING: ON`, and e
 
 Asks a model what it actually consumes and produces, by querying the compiled
 model through a Python BMI wrapper. Introspection only — it does not change how
-ngen runs, and is independent of which configure you used.
+ngen runs.
 
-Order matters: the wrapper is a C extension that links CFE's shared library.
+Order matters: each wrapper is an extension that links its model's shared library.
+`build-cfe-lib` is fully independent of your main `cmake_build` (extern/cfe is
+its own standalone CMake project). `build-noah-lib` is not: extern/noah-owp-modular
+only builds correctly as part of the main project, so it reconfigures the same
+`cmake_build` your other configure tasks use, with the Fortran configure's flags —
+if `cmake_build` was previously configured differently (e.g. for Python), this
+reverts it, the same as switching between any two configure tasks would; run
+`make -C commands clean` first if you want a from-scratch reconfigure instead.
 
 ```bash
 make -C commands setup-venv            # if you have not already
 make -C commands build-cfe-lib         # extern/cfe -> libcfebmi.so
-make -C commands install-bmi-wrappers  # pip install into .venv-linux
+make -C commands build-noah-lib        # reconfigures cmake_build for Fortran -> extern/noah-owp-modular/cmake_build/libsurfacebmi.so
+make -C commands install-bmi-wrappers  # pip install into .venv-linux, per-wrapper
 ```
+
+`install-bmi-wrappers` installs each wrapper individually, gated on its own
+library already being built — a missing Noah lib only skips Noah's wrapper,
+not CFE's, and vice versa.
 
 Then:
 
 ```bash
 make -C commands bmi-io                                     # CFE inputs/outputs
+make -C commands bmi-io MODEL=noah CONFIG=data/gauge_01073000/NOAH/cat-11223.input
 make -C commands bmi-io REALIZATION=data/example_bmi_multi_realization_config_w_noah_pet_cfe.json
 ```
 

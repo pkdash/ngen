@@ -11,9 +11,11 @@ change how ngen behaves — `.venv-linux` simply gains some extra modules.
 
 These wrapper packages ship no static metadata: no variable list, no units table.
 That is deliberate. The authoritative source for CFE's I/O contract is
-`extern/cfe/cfe/src/bmi_cfe.c`, and a checked-in copy of it would drift silently.
-So every fact here is queried live, which means a model must be **initialized with
-a real config** before it can be asked anything.
+`extern/cfe/cfe/src/bmi_cfe.c` (Noah-OWP-Modular's is
+`extern/noah-owp-modular/noah-owp-modular/bmi/bmi_noahowp.f90`), and a checked-in
+copy of either would drift silently. So every fact here is queried live, which
+means a model must be **initialized with a real config** before it can be asked
+anything.
 
 ## Prerequisites, in order
 
@@ -23,27 +25,57 @@ build time and `dlopen`s it at import time. So the library must exist first:
 ```sh
 make -C commands setup-venv            # once: .venv-linux with numpy<2
 make -C commands build-cfe-lib         # extern/cfe -> libcfebmi.so + cfebmi.pc
+make -C commands build-noah-lib        # full ngen configure -> extern/noah-owp-modular/cmake_build/libsurfacebmi.so
 make -C commands install-bmi-wrappers  # pip install into .venv-linux
 ```
 
-`install-bmi-wrappers` exports `CFE_ROOT` and `CFE_LIB_DIR`, which is what
+`build-noah-lib` reconfigures the same `cmake_build` every other configure
+target uses, with `configure-fortran`'s flags, rather than configuring
+`extern/noah-owp-modular` standalone the way `build-cfe-lib` configures
+`extern/cfe`: that subdirectory's own `CMakeLists.txt` only links `iso_c_bmi`
+and skips NetCDF discovery inside its `NGEN_IS_MAIN_PROJECT` branch, so a
+standalone configure hits the other, broken branch instead (it requires
+NetCDF and has a non-functional `surfacebmi.pc.in`). There is no isolated
+build directory to use instead: `extern/noah-owp-modular` and
+`extern/iso_c_fortran_bmi`'s own `CMakeLists.txt` files always place their
+build output at a fixed path under `extern/` regardless of which top-level
+build directory triggered the configure, so a separate directory would not
+actually be isolated from `cmake_build` — just an illusion of isolation. If
+`cmake_build` was configured differently before (e.g. `configure-python`),
+`build-noah-lib` reverts it to the Fortran flags, the same as running any
+other `configure-*` target would; run `make -C commands clean` first for a
+from-scratch reconfigure.
+
+`install-bmi-wrappers` installs each wrapper individually, gated on its own
+shared library already existing — not one combined
+`pip install -r requirements.txt` — so a missing Noah lib only skips Noah's
+wrapper (with a note on how to build it) rather than blocking CFE's install
+too, and vice versa. It exports `CFE_ROOT` and `CFE_LIB_DIR`, which is what
 `pymt_cfe`'s `setup.py` looks for (it also falls back to `pkg-config cfebmi`).
 Note its `$CFE_ROOT/build` fallback does not match ngen's `cmake_build`, so
-`CFE_LIB_DIR` has to be passed explicitly — the Makefile target does that.
+`CFE_LIB_DIR` has to be passed explicitly — the Makefile target does that. It
+likewise exports `NOAH_ROOT`, `NOAH_LIB_DIR`, and `NOAH_MOD_DIR` for
+`pymt_noah_owp`'s `setup.py`, which (unlike CFE's) has no `pkg-config`
+fallback, so these three env vars are its only discovery route.
 
-The installed extension carries an RPATH pointing at `extern/cfe/cmake_build`, so
-`import pymt_cfe` works without `LD_LIBRARY_PATH` being set. **If you move or
-delete that build directory, reinstall the wrapper** rather than patching your
+The installed extensions carry an RPATH pointing at their respective build
+dirs (`extern/cfe/cmake_build`, `extern/noah-owp-modular/cmake_build`), so
+`import pymt_cfe`/`import pymt_noah_owp` work without `LD_LIBRARY_PATH` being
+set — for Noah this required a small patch to `pymt_noah_owp`'s `setup.py`
+upstream (`pkdash/BMI`, tag `pymt_noah_owp-v0.2.0`),
+mirroring what `pymt_cfe`'s `setup.py` already did. **If you move or delete a
+build directory, reinstall the wrapper** rather than patching your
 environment.
 
-All of this runs inside the devcontainer. `libcfebmi.so` is an ELF object and
-`.venv-linux` is not executable from a macOS host.
+All of this runs inside the devcontainer. `libcfebmi.so`/`libsurfacebmi.so` are
+ELF objects and `.venv-linux` is not executable from a macOS host.
 
 ## Usage
 
 ```sh
 make -C commands bmi-io                       # CFE, registry's sample config
 make -C commands bmi-io MODEL=cfe CONFIG=path/to/cat-N_bmi_config_cfe.txt
+make -C commands bmi-io MODEL=noah CONFIG=data/gauge_01073000/NOAH/cat-11223.input
 make -C commands bmi-io REALIZATION=data/example_bmi_multi_realization_config_w_noah_pet_cfe.json
 ```
 
@@ -53,6 +85,7 @@ Or directly, which is the only way to reach `--json`, `--values` and `--verbose`
 .venv-linux/bin/python tools/bmi-wrappers/bmi_introspect.py list
 .venv-linux/bin/python tools/bmi-wrappers/bmi_introspect.py cfe --json
 .venv-linux/bin/python tools/bmi-wrappers/bmi_introspect.py cfe --values
+.venv-linux/bin/python tools/bmi-wrappers/bmi_introspect.py noah --json
 ```
 
 **Piping `BMI_IO_FLAGS=--json` through the Makefile target:** `make -C commands` prints
@@ -121,26 +154,43 @@ entries for variables CFE does not have.
 
 ## Adding another wrapper
 
-No Python changes are needed.
+No Python changes are needed. The Noah-OWP-Modular entry below is a real,
+working example of this recipe, not a sketch.
 
 1. Add a line to `requirements.txt` pinning the distribution to a tag or commit.
 2. Add a block to `wrappers.json`:
 
 ```json
 "noah": {
-  "description": "...",
+  "description": "Noah-OWP-Modular (NOAA-OWP/noah-owp-modular), via pymt_noah_owp",
   "distribution": "pymt_noah_owp",
   "import_path": "pymt_noah_owp",
-  "class_name": "NoahOwpModular",
+  "class_name": "NOAH_OWP",
   "lib_file": "extern/noah-owp-modular/cmake_build/libsurfacebmi.so",
-  "build_env": {"NOAH_ROOT": "...", "NOAH_LIB_DIR": "..."},
-  "sample_config": "...",
+  "build_env": {
+    "NOAH_ROOT": "extern/noah-owp-modular/noah-owp-modular",
+    "NOAH_LIB_DIR": "extern/noah-owp-modular/cmake_build",
+    "NOAH_MOD_DIR": "extern/noah-owp-modular/cmake_build/mod"
+  },
+  "sample_config": "data/gauge_01073000/NOAH/cat-11223.input",
   "realization_model_types": ["bmi_fortran_noahowp"]
 }
 ```
 
 3. If the new model needs different env vars at pip-install time, extend the
-   `install-bmi-wrappers` recipe in `commands/Makefile`.
+   `install-bmi-wrappers` recipe in `commands/Makefile` (as done for Noah's
+   `NOAH_ROOT`/`NOAH_LIB_DIR`/`NOAH_MOD_DIR`) — install it individually, gated
+   on its own lib being present, rather than folding it into one
+   `pip install -r requirements.txt`; otherwise a missing lib for the new
+   model blocks installing every other wrapper too.
+4. If the model's own `setup.py` has no RPATH-embedding (Noah's didn't — see
+   the "Prerequisites" section above), patch it upstream rather than shipping
+   an `LD_LIBRARY_PATH` workaround here.
+5. Add the model's key to the `bmiModel` input's `options` in
+   `.vscode/tasks.json` — it is a separate, hardcoded list (VS Code tasks
+   can't read `wrappers.json` at picker-render time), so a model added only
+   here and in `wrappers.json` works from a terminal but won't show up in the
+   "BMI: Show model input/output requirements" task's picker.
 
 `realization_model_types` is how the cross-check recognizes the model inside a
 realization config; it is matched against `model_type_name`.

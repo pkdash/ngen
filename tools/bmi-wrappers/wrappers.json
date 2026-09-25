@@ -18,5 +18,20 @@
     },
     "sample_config": "data/gauge_01073000/CFE/cat-11223_bmi_config_cfe_pass.txt",
     "realization_model_types": ["bmi_c_cfe", "cfe"]
+  },
+
+  "noah": {
+    "description": "Noah-OWP-Modular (NOAA-OWP/noah-owp-modular), via pymt_noah_owp",
+    "distribution": "pymt_noah_owp",
+    "import_path": "pymt_noah_owp",
+    "class_name": "NOAH_OWP",
+    "lib_file": "extern/noah-owp-modular/cmake_build/libsurfacebmi.so",
+    "build_env": {
+      "NOAH_ROOT": "extern/noah-owp-modular/noah-owp-modular",
+      "NOAH_LIB_DIR": "extern/noah-owp-modular/cmake_build",
+      "NOAH_MOD_DIR": "extern/noah-owp-modular/cmake_build/mod"
+    },
+    "sample_config": "data/gauge_01073000/NOAH/cat-11223.input",
+    "realization_model_types": ["bmi_fortran_noahowp"]
   }
 }
