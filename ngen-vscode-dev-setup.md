@@ -18,6 +18,7 @@ This guide was validated against `CIROH-UA/ngen` at commit
 `ad1c083a1db21c04eb13dabd9a78432b619ae0e0` on the `ngiab` branch.
 
 ## Table of Contents
+
 1. [Dev Container Setup (Docker)](#dev-container-setup-docker)
 2. [VSCode Setup](#vscode-setup)
 3. [Building the Project](#building-the-project)
@@ -193,6 +194,7 @@ Six configurations are defined in `.vscode/launch.json`:
 
 The main config. Press `F5`, select it from the Run and Debug panel dropdown if it isn't already
 selected. It:
+
 1. Runs the **Build ngen (CMake)** task first (configures + builds if needed)
 2. Launches `cmake_build/ngen` under gdb with `cwd` set to the repo root and the same example
    arguments from `README.md`'s [Usage](README.md#usage) section (a subset of the sample
@@ -226,6 +228,7 @@ parameterized: it prompts for a **binary/target name** (default `test_unit`) and
 typed.
 
 Concretely, to debug `test_partition`:
+
 1. Press `F5`, choose **"Debug a test binary"**
 2. VS Code runs its preLaunchTask, **"Build test binary (CMake)"**, which prompts:
    *"CMake target name to build..."* → type `test_partition`, press Enter. This runs
@@ -260,7 +263,7 @@ started the executable manually from a terminal first.
 
 ### Debug Console Commands
 
-```
+```text
 p myVariable          # print a variable
 p myArray[0]@10       # print array elements
 p myStruct.member      # print struct members
@@ -318,7 +321,7 @@ interpreter present at configure time, so activate the same venv yourself
 
 Not installed in the default image. Add to `.devcontainer/Dockerfile`'s apt-get list:
 
-```
+```text
 libopenmpi-dev openmpi-bin openmpi-common
 ```
 
@@ -547,7 +550,7 @@ Full details, and how to add wrappers for other models, in
 
 ## Troubleshooting
 
-#### 1. CMake configure fails: `add_subdirectory` / `googletest` errors, or "the source directory ... does not contain a CMakeLists.txt"
+### 1. CMake configure fails: `add_subdirectory` / `googletest` errors, or "the source directory ... does not contain a CMakeLists.txt"
 
 **Cause**: `test/googletest` isn't initialized. Unlike most other `extern/` submodules, this one
 has no automatic `git submodule update` call in `test/CMakeLists.txt` — it must already exist
@@ -556,11 +559,12 @@ before CMake configures at all.
 **Solution**: This is already handled by `postCreateCommand` in `.devcontainer/devcontainer.json`
 the first time the container is created. If you hit this anyway (e.g. after a manual
 `git submodule deinit`), run:
+
 ```bash
 git submodule update --init --recursive -- test/googletest
 ```
 
-#### 2. CMake configure fails: git "detected dubious ownership in repository"
+### 2. CMake configure fails: git "detected dubious ownership in repository"
 
 **Cause**: The bind-mounted repo is owned by your host user, but the container runs as root; recent
 git versions refuse to operate on a directory it doesn't own — which breaks the `git submodule
@@ -571,7 +575,7 @@ update` / `git rev-parse HEAD` calls ngen's own `CMakeLists.txt` makes during co
 `git config --global --add safe.directory ${containerWorkspaceFolder}`. If you hit this outside
 that flow (e.g. a manually-created container), run the same command yourself inside the container.
 
-#### 3. CMake configure fails: `Could NOT find Boost` or version too old
+### 3. CMake configure fails: `Could NOT find Boost` or version too old
 
 **Cause**: You're not inside the devcontainer (e.g. running `cmake` on the host Mac). Boost 1.79.0
 is only guaranteed at `$BOOST_ROOT` inside this project's devcontainer image.
@@ -600,7 +604,7 @@ do want UEB, re-run the Boost setup task and let it finish — it now verifies `
 and fails loudly if it didn't. The configure tasks also check this up front, so you get a message
 naming the task to run instead of the CMake error above.
 
-#### 4. CMake configure fails: `Could NOT find Python (missing: Python_NumPy_INCLUDE_DIRS NumPy)`
+### 4. CMake configure fails: `Could NOT find Python (missing: Python_NumPy_INCLUDE_DIRS NumPy)`
 
 **Cause**: An `NGEN_WITH_PYTHON=ON` configure ran without a `numpy<2.0` virtualenv active in *the
 shell the task ran in*. A task launched from the Command Palette does **not** inherit a venv you
@@ -616,7 +620,7 @@ built with embedded Python, since CMake binds to the interpreter present at conf
 Only the Python task needs this. The **BMI-C + Fortran/Noah** and **BMI-C + UEB** tasks have
 `NGEN_WITH_PYTHON=OFF` — neither model needs Python — so they run with no venv at all.
 
-#### 5. Breakpoints aren't hit / gdb can't attach
+### 5. Breakpoints aren't hit / gdb can't attach
 
 **Cause**: Docker's default seccomp profile blocks the `ptrace` syscall gdb needs.
 
@@ -624,7 +628,7 @@ Only the Python task needs this. The **BMI-C + Fortran/Noah** and **BMI-C + UEB*
 `.devcontainer/devcontainer.json`'s `runArgs` — if you hit this, check you're running the container
 VS Code built from this repo's `.devcontainer/`, not some other image.
 
-#### 6. IntelliSense not working / red squiggles everywhere
+### 6. IntelliSense not working / red squiggles everywhere
 
 **Solution**:
 1. Make sure `cmake_build/compile_commands.json` exists — run the **CMake: Configure** task at
@@ -632,7 +636,7 @@ VS Code built from this repo's `.devcontainer/`, not some other image.
 2. Command Palette → **"C/C++: Reset IntelliSense Database"**
 3. Command Palette → **"Developer: Reload Window"**
 
-#### 7. `ngen` exits immediately with a usage message
+### 7. `ngen` exits immediately with a usage message
 
 **Cause**: The driver takes 5 positional args minimum (catchment data, catchment subset, nexus
 data, nexus subset, realization config), plus optional partition config /
@@ -642,24 +646,28 @@ or `README.md`'s [Usage](README.md#usage) section.
 
 ---
 
-#### 8. `ImportError: libcfebmi.so: cannot open shared object file`
+### 8. `ImportError: libcfebmi.so: cannot open shared object file`
 
 **Cause**: The Python CFE wrapper resolves `libcfebmi.so` through an RPATH baked in when it was
 installed, pointing at `extern/cfe/cmake_build`. Deleting or moving that directory — a
 `make -C commands clean` does not touch it, but removing `extern/cfe/cmake_build` by hand does —
 breaks the installed module.
 
-**Solution**: Rebuild the library and reinstall the wrapper, so the RPATH is re-baked:
+**Solution**: Rebuild the library and force-reinstall the wrapper, so the RPATH is re-baked
+(without `FORCE=1`, pip sees the wrapper as already installed and keeps the stale build):
+
 ```bash
 make -C commands build-cfe-lib
-make -C commands install-bmi-wrappers
+make -C commands install-bmi-wrappers FORCE=1
 ```
+
+The same applies to every wrapper, not just CFE.
 Setting `LD_LIBRARY_PATH` also works, but reinstalling is preferred — it keeps the module
 self-contained for every future shell.
 
 ---
 
-#### 9. Installing `pymt_noah_owp` fails while compiling `bmi_interoperability.f90`, or it imports but every call segfaults
+### 9. Installing `pymt_noah_owp` fails while compiling `bmi_interoperability.f90`, or it imports but every call segfaults
 
 **Cause**: `pymt_noah_owp`'s Cython wrapper compiles its own `bmi_interoperability.f90` shim against
 the `.mod` files under `extern/noah-owp-modular/cmake_build/mod/` (`bmif_2_0.mod`, `bminoahowp.mod`).
@@ -672,13 +680,14 @@ failing cleanly.
 **Solution**: Rebuild both with the same toolchain — inside the devcontainer, `build-noah-lib` and
 `install-bmi-wrappers` both use whatever `gfortran`/`FC` is on `PATH`, so as long as you haven't
 mixed a host-built library with a container-built wrapper (or vice versa), this shouldn't happen. If
-it does, `make -C commands build-noah-lib` again before reinstalling the wrapper.
+it does, `make -C commands build-noah-lib` again, then reinstall the wrapper with
+`make -C commands install-bmi-wrappers FORCE=1`.
 
 ---
 
 ## Project Structure (VS Code-relevant files)
 
-```
+```text
 ngen/
 ├── .devcontainer/
 │   ├── Dockerfile              # Ubuntu 22.04 image: build tools, NetCDF/UDUNITS2/SQLite3, Boost 1.79.0, gdb

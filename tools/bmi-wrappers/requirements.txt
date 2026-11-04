@@ -5,9 +5,17 @@
 # Each of these is a compiled extension that links the model's BMI shared library
 # at build time, so the corresponding lib_file in wrappers.json must exist before
 # pip runs. `make -C commands install-bmi-wrappers` enforces that ordering.
+#
+# Changing a pin does not rebuild an already-installed wrapper; reinstall with
+# `make -C commands install-bmi-wrappers FORCE=1`.
 
-pymt_cfe @ git+https://github.com/pkdash/BMI.git@pymt_cfe-v0.2.0#subdirectory=CFE/pymt_cfe
-pymt_noah_owp @ git+https://github.com/pkdash/BMI.git@pymt_noah_owp-v0.2.0#subdirectory=NOAH_OWP/pymt_noah_owp
-
-# Pending upstream: not yet verified against ngen's extern/ builds.
-# pymt_sft      @ git+https://github.com/pkdash/BMI.git@<rev>#subdirectory=SOIL-FREEZE-THAW/pymt_sft
+pymt_cfe @ git+https://github.com/pkdash/BMI.git@v0.3.0#subdirectory=CFE/pymt_cfe
+pymt_noah_owp @ git+https://github.com/pkdash/BMI.git@v0.3.0#subdirectory=NOAH_OWP/pymt_noah_owp
+pymt_lasam    @ git+https://github.com/pkdash/BMI.git@v0.3.0#subdirectory=LASAM/pymt_lasam
+pymt_pet      @ git+https://github.com/pkdash/BMI.git@v0.3.0#subdirectory=PET/pymt_pet
+pymt_sac_sma  @ git+https://github.com/pkdash/BMI.git@v0.3.0#subdirectory=SAC_SMA/pymt_sac_sma
+pymt_sft      @ git+https://github.com/pkdash/BMI.git@v0.3.0#subdirectory=SOIL-FREEZE-THAW/pymt_sft
+pymt_smp      @ git+https://github.com/pkdash/BMI.git@v0.3.0#subdirectory=SOIL-MOISTURE-PROFILES/pymt_smp
+pymt_snow17   @ git+https://github.com/pkdash/BMI.git@v0.3.0#subdirectory=SNOW17/pymt_snow17
+pymt_topmodel @ git+https://github.com/pkdash/BMI.git@v0.3.0#subdirectory=TOPMODEL/pymt_topmodel
+pymt_ueb      @ git+https://github.com/pkdash/BMI.git@v0.3.0#subdirectory=UEB/pymt_ueb

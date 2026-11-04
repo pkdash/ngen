@@ -177,18 +177,40 @@
                 "cwd": "${workspaceFolder}"
             },
             "problemMatcher": [],
-            "detail": "pip installs each Python BMI wrapper package from tools/bmi-wrappers/requirements.txt into .venv-linux individually, gated on its own shared library already being built -- a missing Noah lib only skips Noah's wrapper (with a note on what to run first) rather than blocking CFE's install too, and vice versa. Exports the CFE_ROOT/CFE_LIB_DIR that pymt_cfe's setup.py needs and the NOAH_ROOT/NOAH_LIB_DIR/NOAH_MOD_DIR that pymt_noah_owp's setup.py needs. Run the Setup: Python venv task first, plus whichever of Setup: Build CFE shared library / Setup: Build Noah-OWP-Modular shared library correspond to the wrapper(s) you want. These wrappers are introspection helpers only -- ngen still runs these models through its own BMI adapters, and nothing here is imported by the ngen binary."
+            "detail": "pip installs each Python BMI wrapper package from tools/bmi-wrappers/requirements.txt into .venv-linux individually, gated on its own native shared library. Missing libraries are reported as skips; an actual pip failure makes the task fail after it has attempted the other available wrappers. Run Setup: Python venv first, then build each model's native BMI library with the selected-library task. These wrappers are introspection helpers only -- ngen still runs models through its own BMI adapters."
+        },
+        {
+            "label": "Setup: Reinstall BMI Python wrappers (force)",
+            "type": "process",
+            "command": "make",
+            "args": ["-C", "commands", "install-bmi-wrappers", "FORCE=1"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "detail": "Same as Setup: Install BMI Python wrappers, but rebuilds wrappers that are already installed (pip --force-reinstall --no-deps). Use after changing a pin in tools/bmi-wrappers/requirements.txt or rebuilding/moving a native library: the plain install task skips a wrapper whose version is already installed, keeping the stale build."
+        },
+        {
+            "label": "Setup: Build a BMI wrapper native library",
+            "type": "process",
+            "command": "make",
+            "args": ["-C", "commands", "build-${input:bmiNativeBuild}-lib"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": ["$gcc"],
+            "detail": "Builds the selected model's shared BMI library, needed before installing its Python introspection wrapper. Noah reconfigures the main CMake build; UEB requires the Boost and EWTS setup tasks first. Build one model at a time rather than enabling optional native models in the main ngen build."
         },
         {
             "label": "BMI: Show model input/output requirements",
             "type": "process",
             "command": "make",
-            "args": ["-C", "commands", "bmi-io", "MODEL=${input:bmiModel}"],
+            "args": ["-C", "commands", "bmi-io", "MODEL=${input:bmiModel}", "CONFIG=${input:bmiConfig}", "WORKDIR=${input:bmiWorkingDir}"],
             "options": {
                 "cwd": "${workspaceFolder}"
             },
             "problemMatcher": [],
-            "detail": "Queries the chosen model live for its BMI inputs and outputs with units, types, and grids, using the sample config registered for it in tools/bmi-wrappers/wrappers.json. To also cross-check an ngen realization config, run it from a terminal instead: make -C commands bmi-io MODEL=cfe|noah CONFIG=... REALIZATION=..."
+            "detail": "Queries the chosen model live for its BMI inputs and outputs with units, types, and grids. Leave the config prompt blank to use a registered sample when one is available; otherwise provide a model initialization config. Leave the working-directory prompt blank to use the registry default or repository root; provide one when the config refers to files relative to another directory."
         },
         {
             "label": "Rebuild ngen",
@@ -213,7 +235,26 @@
             "id": "bmiModel",
             "type": "pickString",
             "description": "Which model's BMI wrapper to query (key from tools/bmi-wrappers/wrappers.json)",
-            "options": ["cfe", "noah"],
+            "options": ["cfe", "noah", "lasam", "pet", "sac_sma", "sft", "smp", "snow17", "topmodel", "ueb"],
+            "default": "cfe"
+        },
+        {
+            "id": "bmiConfig",
+            "type": "promptString",
+            "description": "Model BMI initialization config path, relative to the repository root or absolute; leave blank to use the registry sample if available",
+            "default": ""
+        },
+        {
+            "id": "bmiWorkingDir",
+            "type": "promptString",
+            "description": "Optional model working directory for resolving relative config paths; relative paths are from the repository root",
+            "default": ""
+        },
+        {
+            "id": "bmiNativeBuild",
+            "type": "pickString",
+            "description": "Native BMI library build target to run",
+            "options": ["cfe", "noah", "lasam", "pet", "sac-sma", "sft", "smp", "snow17", "topmodel", "ueb"],
             "default": "cfe"
         }
     ]

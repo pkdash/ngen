@@ -416,6 +416,8 @@ def main(argv=None):
     parser.add_argument("model", nargs="?",
                         help=f"model key, or 'list'. Known: {', '.join(sorted(registry))}")
     parser.add_argument("--config", help="BMI init config (default: registry sample_config)")
+    parser.add_argument("--workdir",
+                        help="working directory for model-relative input paths (default: registry or repo root)")
     parser.add_argument("--realization", help="ngen realization config to cross-check against")
     parser.add_argument("--catchment", help="restrict the cross-check to one catchment id")
     parser.add_argument("--json", action="store_true", help="emit JSON instead of a table")
@@ -448,8 +450,16 @@ def main(argv=None):
               file=sys.stderr)
         return 1
 
-    # Model configs reference their inputs by relative path.
-    os.chdir(REPO_ROOT)
+    # Model configs reference their inputs by relative path. Resolve the
+    # working directory from the repo root so registry entries are portable.
+    workdir = args.workdir or entry.get("working_directory")
+    working_path = Path(workdir) if workdir else REPO_ROOT
+    if not working_path.is_absolute():
+        working_path = REPO_ROOT / working_path
+    if not working_path.is_dir():
+        print(f"ERROR: working directory not found: {working_path}", file=sys.stderr)
+        return 1
+    os.chdir(working_path)
 
     with model_chatter_to_stderr():
         model = cls()

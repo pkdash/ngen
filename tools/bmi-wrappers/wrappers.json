@@ -3,7 +3,7 @@
     "Registry of Python BMI wrapper packages usable for introspection.",
     "Paths are relative to the ngen repo root. JSON rather than TOML because the",
     "devcontainer ships Python 3.10, which has no stdlib tomllib.",
-    "To add a model: add a block here and a line in requirements.txt. No code changes."
+    "Every distribution is pinned in requirements.txt; sample configs are optional."
   ],
 
   "cfe": {
@@ -33,5 +33,127 @@
     },
     "sample_config": "data/gauge_01073000/NOAH/cat-11223.input",
     "realization_model_types": ["bmi_fortran_noahowp"]
+  },
+
+  "lasam": {
+    "description": "LGAR soil-water model, via pymt_lasam",
+    "distribution": "pymt_lasam",
+    "import_path": "pymt_lasam",
+    "class_name": "LASAM",
+    "lib_file": "extern/lgar-c/cmake_build/liblasambmi.so",
+    "build_env": {
+      "LASAM_ROOT": "extern/lgar-c/LGAR-C",
+      "LASAM_LIB_DIR": "extern/lgar-c/cmake_build",
+      "LASAM_BMI_DIR": "extern/lgar-c/LGAR-C/bmi"
+    },
+    "sample_config": "extern/lgar-c/LGAR-C/configs/config_lasam_Phillipsburg.txt",
+    "working_directory": "extern/lgar-c/LGAR-C",
+    "realization_model_types": []
+  },
+
+  "pet": {
+    "description": "Potential evapotranspiration model, via pymt_pet",
+    "distribution": "pymt_pet",
+    "import_path": "pymt_pet",
+    "class_name": "PET",
+    "lib_file": "extern/evapotranspiration/evapotranspiration/cmake_build/libpetbmi.so",
+    "build_env": {
+      "PET_ROOT": "extern/evapotranspiration/evapotranspiration",
+      "PET_LIB_DIR": "extern/evapotranspiration/evapotranspiration/cmake_build"
+    },
+    "sample_config": "data/gauge_01073000/PET/cat-11223_pet_config.txt",
+    "realization_model_types": ["bmi_c_pet", "pet"]
+  },
+
+  "sac_sma": {
+    "description": "Sacramento Soil Moisture Accounting model, via pymt_sac_sma",
+    "distribution": "pymt_sac_sma",
+    "import_path": "pymt_sac_sma",
+    "class_name": "SAC_SMA",
+    "lib_file": "extern/sac-sma/cmake_build/libsacbmi.so",
+    "build_env": {
+      "SAC_SMA_ROOT": "extern/sac-sma",
+      "SAC_SMA_LIB_DIR": "extern/sac-sma/cmake_build",
+      "SAC_SMA_BMI_DIR": "extern/sac-sma/src/bmi",
+      "ISO_C_FORTRAN_BMI_PATH": "extern/iso_c_fortran_bmi"
+    },
+    "realization_model_types": []
+  },
+
+  "sft": {
+    "description": "Soil Freeze Thaw model, via pymt_sft",
+    "distribution": "pymt_sft",
+    "import_path": "pymt_sft",
+    "class_name": "SFT",
+    "lib_file": "extern/SoilFreezeThaw/cmake_build/libsftbmi.so",
+    "build_env": {
+      "SFT_ROOT": "extern/SoilFreezeThaw/SoilFreezeThaw",
+      "SFT_LIB_DIR": "extern/SoilFreezeThaw/cmake_build",
+      "SFT_BMI_DIR": "extern/SoilFreezeThaw/SoilFreezeThaw/bmi"
+    },
+    "sample_config": "extern/SoilFreezeThaw/SoilFreezeThaw/configs/laramie_config.txt",
+    "working_directory": "extern/SoilFreezeThaw/SoilFreezeThaw",
+    "realization_model_types": ["bmi_sft"]
+  },
+
+  "smp": {
+    "description": "Soil Moisture Profiles model, via pymt_smp",
+    "distribution": "pymt_smp",
+    "import_path": "pymt_smp",
+    "class_name": "SMP",
+    "lib_file": "extern/SoilMoistureProfiles/cmake_build/libsmpbmi.so",
+    "build_env": {
+      "SMP_ROOT": "extern/SoilMoistureProfiles/SoilMoistureProfiles",
+      "SMP_LIB_DIR": "extern/SoilMoistureProfiles/cmake_build",
+      "SMP_BMI_DIR": "extern/SoilMoistureProfiles/SoilMoistureProfiles/bmi"
+    },
+    "sample_config": "extern/SoilMoistureProfiles/SoilMoistureProfiles/configs/config_conceptual.txt",
+    "realization_model_types": ["bmi_smp"]
+  },
+
+  "snow17": {
+    "description": "SNOW-17 snow accumulation and ablation model, via pymt_snow17",
+    "distribution": "pymt_snow17",
+    "import_path": "pymt_snow17",
+    "class_name": "SNOW17",
+    "lib_file": "extern/snow17/cmake_build/libsnow17bmi.so",
+    "build_env": {
+      "SNOW17_ROOT": "extern/snow17",
+      "SNOW17_LIB_DIR": "extern/snow17/cmake_build",
+      "SNOW17_BMI_DIR": "extern/snow17/src/bmi",
+      "SNOW17_MOD_DIR": "extern/snow17/cmake_build/iso_c_bmi",
+      "ISO_C_FORTRAN_BMI_PATH": "extern/iso_c_fortran_bmi"
+    },
+    "realization_model_types": []
+  },
+
+  "topmodel": {
+    "description": "TOPMODEL hydrologic model, via pymt_topmodel",
+    "distribution": "pymt_topmodel",
+    "import_path": "pymt_topmodel",
+    "class_name": "TOPMODEL",
+    "lib_file": "extern/topmodel/cmake_build/libtopmodelbmi.so",
+    "build_env": {
+      "TOPMODEL_ROOT": "extern/topmodel/topmodel",
+      "TOPMODEL_LIB_DIR": "extern/topmodel/cmake_build"
+    },
+    "sample_config": "extern/topmodel/topmodel/data/topmod.run",
+    "working_directory": "extern/topmodel/topmodel",
+    "realization_model_types": ["bmi_c_topmodel", "topmodel"]
+  },
+
+  "ueb": {
+    "description": "Utah Energy Balance snow model, via pymt_ueb",
+    "distribution": "pymt_ueb",
+    "import_path": "pymt_ueb",
+    "class_name": "UEB",
+    "lib_file": "extern/ueb-bmi/cmake_build/src/libbmiuebcxx.so",
+    "build_env": {
+      "UEB_ROOT": "extern/ueb-bmi",
+      "UEB_LIB_DIR": "extern/ueb-bmi/cmake_build/src"
+    },
+    "sample_config": "extern/ueb-bmi/examples/bmi_test/data/ueb/control.dat",
+    "working_directory": "extern/ueb-bmi/examples/bmi_test",
+    "realization_model_types": ["bmi_c++_ueb", "ueb"]
   }
 }

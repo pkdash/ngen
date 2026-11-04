@@ -36,6 +36,20 @@ VENV         := .venv-linux
 # $(BUILD_DIR): extern/cfe is its own CMake project, not part of the ngen build.
 CFE_BUILD_DIR := extern/cfe/cmake_build
 CFE_LIB       := $(ROOT)/$(CFE_BUILD_DIR)/libcfebmi.so
+LASAM_LIB     := $(ROOT)/extern/lgar-c/cmake_build/liblasambmi.so
+PET_LIB       := $(ROOT)/extern/evapotranspiration/evapotranspiration/cmake_build/libpetbmi.so
+SAC_SMA_LIB   := $(ROOT)/extern/sac-sma/cmake_build/libsacbmi.so
+# SFT/SMP build to the OUTPUT dir ngen's own CMakeLists.txt uses for them
+# (one level above the nested source dir), so a library built by ngen's
+# configure and one built by build-sft-lib/build-smp-lib land in the same place.
+SFT_BUILD_DIR := extern/SoilFreezeThaw/cmake_build
+SMP_BUILD_DIR := extern/SoilMoistureProfiles/cmake_build
+SFT_LIB       := $(ROOT)/$(SFT_BUILD_DIR)/libsftbmi.so
+SMP_LIB       := $(ROOT)/$(SMP_BUILD_DIR)/libsmpbmi.so
+SNOW17_LIB    := $(ROOT)/extern/snow17/cmake_build/libsnow17bmi.so
+TOPMODEL_LIB  := $(ROOT)/extern/topmodel/cmake_build/libtopmodelbmi.so
+UEB_LIB       := $(ROOT)/extern/ueb-bmi/cmake_build/src/libbmiuebcxx.so
+BMI_WRAPPER_LIB_DIRS := $(ROOT)/extern/cfe/cmake_build:$(ROOT)/extern/noah-owp-modular/cmake_build:$(ROOT)/extern/lgar-c/cmake_build:$(ROOT)/extern/evapotranspiration/evapotranspiration/cmake_build:$(ROOT)/extern/sac-sma/cmake_build:$(ROOT)/$(SFT_BUILD_DIR):$(ROOT)/$(SMP_BUILD_DIR):$(ROOT)/extern/snow17/cmake_build:$(ROOT)/extern/topmodel/cmake_build:$(ROOT)/extern/ueb-bmi/cmake_build/src:$(BOOST_BUILT)/lib:$(EWTS_PREFIX)/lib
 
 # Noah-OWP-Modular. Unlike CFE, extern/noah-owp-modular is not a standalone
 # CMake project: its CMakeLists only links iso_c_bmi and skips NetCDF
@@ -55,6 +69,7 @@ NOAH_LIB := $(ROOT)/extern/noah-owp-modular/cmake_build/libsurfacebmi.so
 
 # Overridable like TARGETS, for the bmi-io target.
 MODEL        ?= cfe
+WORKDIR      ?=
 
 # Targets `make build` passes to cmake --build. Override per configuration, e.g.
 #     make -C commands build TARGETS="ngen bmiuebcxx surfacebmi"
@@ -139,10 +154,12 @@ help:
 	@echo "  show-config         Print the optional components the current $(BUILD_DIR) was configured with"
 	@echo
 	@echo "BMI wrapper tooling (Python introspection; does not affect the ngen binary):"
-	@echo "  build-cfe-lib         Build extern/cfe standalone -> $(CFE_BUILD_DIR)/libcfebmi.so"
-	@echo "  build-noah-lib        Build surfacebmi via a full ngen configure -> extern/noah-owp-modular/cmake_build/libsurfacebmi.so"
-	@echo "  install-bmi-wrappers  pip install the wrappers into $(VENV)   needs: setup-venv, build-cfe-lib, build-noah-lib"
-	@echo "  bmi-io                Show a model's BMI inputs/outputs: make -C commands bmi-io MODEL=cfe|noah [CONFIG=...] [REALIZATION=...]"
+	@echo "  build-*-lib           Build an individual wrapper's native BMI library"
+	@echo "  build-bmi-wrapper-libs Build native BMI libraries for all ten wrappers"
+	@echo "  install-bmi-wrappers  pip install each wrapper whose native library exists"
+	@echo "                        FORCE=1 rebuilds already-installed wrappers"
+	@echo "  bmi-io                Query a model: MODEL=cfe|noah|lasam|pet|sac_sma|sft|smp|snow17|topmodel|ueb"
+	@echo "                        Optional: CONFIG=... WORKDIR=... REALIZATION=..."
 	@echo
 	@echo "Build targets per configuration:"
 	@echo "  default   TARGETS=\"ngen testbmicppmodel\"       ueb   TARGETS=\"ngen bmiuebcxx\""
@@ -345,48 +362,165 @@ build-noah-lib:
 	    -DNGEN_WITH_PYTHON:BOOL=OFF && \
 	cmake --build $(BUILD_DIR) --target surfacebmi -- -j $(JOBS)
 
-# Each wrapper is installed individually, gated on its own lib, rather than one
-# `pip install -r requirements.txt`: with a single combined install, a missing
-# Noah lib would fail the whole command and block installing CFE's wrapper too
-# (and vice versa). CFE_ROOT/CFE_LIB_DIR are what pymt_cfe's setup.py looks
-# for; PKG_CONFIG_PATH picks up the cfebmi.pc the CFE build emits, as a second
-# discovery route. NOAH_ROOT/NOAH_LIB_DIR/NOAH_MOD_DIR are what
-# pymt_noah_owp's setup.py looks for; it has no pkg-config fallback, so these
-# must be exported explicitly.
+# These wrapper-specific builds use the model submodules directly. They are
+# kept separate from ngen's default configure so introspection does not silently
+# enable optional native components in the main build.
+.PHONY: build-lasam-lib
+build-lasam-lib:
+	cd $(ROOT) && git submodule update --init --recursive -- extern/lgar-c/LGAR-C && \
+	cmake -S extern/lgar-c -B extern/lgar-c/cmake_build && \
+	cmake --build extern/lgar-c/cmake_build --target lasambmi -- -j $(JOBS)
+
+.PHONY: build-pet-lib
+build-pet-lib:
+	cd $(ROOT) && git submodule update --init --recursive -- extern/evapotranspiration/evapotranspiration && \
+	cmake -S extern/evapotranspiration/evapotranspiration \
+	    -B extern/evapotranspiration/evapotranspiration/cmake_build && \
+	cmake --build extern/evapotranspiration/evapotranspiration/cmake_build --target petbmi -- -j $(JOBS)
+
+.PHONY: build-sac-sma-lib
+build-sac-sma-lib:
+	cd $(ROOT) && git submodule update --init --recursive -- extern/sac-sma && \
+	cmake -S extern/sac-sma -B extern/sac-sma/cmake_build \
+	    -DISO_C_FORTRAN_BMI_PATH=$(ROOT)/extern/iso_c_fortran_bmi && \
+	cmake --build extern/sac-sma/cmake_build --target sacbmi -- -j $(JOBS)
+
+.PHONY: build-sft-lib
+build-sft-lib:
+	cd $(ROOT) && git submodule update --init --recursive -- extern/SoilFreezeThaw/SoilFreezeThaw && \
+	cmake -S extern/SoilFreezeThaw/SoilFreezeThaw \
+	    -B $(SFT_BUILD_DIR) -DNGEN=1 && \
+	cmake --build $(SFT_BUILD_DIR) --target sftbmi -- -j $(JOBS)
+
+.PHONY: build-smp-lib
+build-smp-lib:
+	cd $(ROOT) && git submodule update --init --recursive -- extern/SoilMoistureProfiles/SoilMoistureProfiles && \
+	cmake -S extern/SoilMoistureProfiles/SoilMoistureProfiles \
+	    -B $(SMP_BUILD_DIR) -DNGEN=1 && \
+	cmake --build $(SMP_BUILD_DIR) --target smpbmi -- -j $(JOBS)
+
+.PHONY: build-snow17-lib
+build-snow17-lib:
+	cd $(ROOT) && git submodule update --init --recursive -- extern/snow17 && \
+	cmake -S extern/snow17 -B extern/snow17/cmake_build \
+	    -DISO_C_FORTRAN_BMI_PATH=$(ROOT)/extern/iso_c_fortran_bmi && \
+	cmake --build extern/snow17/cmake_build --target snow17bmi -- -j $(JOBS)
+
+.PHONY: build-topmodel-lib
+build-topmodel-lib:
+	cd $(ROOT) && git submodule update --init --recursive -- extern/topmodel/topmodel && \
+	cmake -S extern/topmodel -B extern/topmodel/cmake_build && \
+	cmake --build extern/topmodel/cmake_build --target topmodelbmi -- -j $(JOBS)
+
+.PHONY: build-ueb-lib
+build-ueb-lib:
+	$(require_boost_built)
+	$(require_ewts)
+	cd $(ROOT) && git submodule update --init --recursive -- extern/ueb-bmi extern/bmi-cxx && \
+	cmake -S extern/ueb-bmi -B extern/ueb-bmi/cmake_build \
+	    -DBOOST_ROOT=$(BOOST_BUILT) \
+	    -Dewts_DIR=$(EWTS_PREFIX)/lib/cmake/ewts \
+	    -DCMAKE_POLICY_DEFAULT_CMP0057=NEW \
+	    -DNETCDF_C_LIB_DIR=/usr/lib/$$(gcc -dumpmachine) \
+	    -DNETCDF_C_INCLUDE_DIR=/usr/include && \
+	cmake --build extern/ueb-bmi/cmake_build --target bmiuebcxx -- -j $(JOBS)
+
+.PHONY: build-bmi-wrapper-libs
+build-bmi-wrapper-libs:
+	@$(MAKE) -f $(MAKEFILE_PATH) build-cfe-lib
+	@$(MAKE) -f $(MAKEFILE_PATH) build-noah-lib
+	@$(MAKE) -f $(MAKEFILE_PATH) build-lasam-lib
+	@$(MAKE) -f $(MAKEFILE_PATH) build-pet-lib
+	@$(MAKE) -f $(MAKEFILE_PATH) build-sac-sma-lib
+	@$(MAKE) -f $(MAKEFILE_PATH) build-sft-lib
+	@$(MAKE) -f $(MAKEFILE_PATH) build-smp-lib
+	@$(MAKE) -f $(MAKEFILE_PATH) build-snow17-lib
+	@$(MAKE) -f $(MAKEFILE_PATH) build-topmodel-lib
+	@$(MAKE) -f $(MAKEFILE_PATH) build-ueb-lib
+
+# FORCE=1 rebuilds wrappers that are already installed. Without it, pip sees
+# the same name and version installed and silently keeps the old build (the
+# recipe still prints "Installed"), even when requirements.txt now pins a
+# different source or the native library moved. --no-deps keeps the reinstall
+# from touching numpy (<2 pin).
+PIP_FORCE := $(if $(filter 1 yes true,$(FORCE)),--force-reinstall --no-deps)
+
+# Install independently: a missing library or a pip failure for one wrapper
+# must not mask successful installs or prevent attempts for the others.
 .PHONY: install-bmi-wrappers
 install-bmi-wrappers:
 	$(require_venv)
-	@installed=0; \
-	cd $(ROOT); \
-	if [ -r "$(CFE_LIB)" ]; then \
+	@cd $(ROOT) && failed=0; \
+	install_wrapper() { \
+	    distribution="$$1"; lib_file="$$2"; target="$$3"; shift 3; \
+	    requirement="$$(grep -m1 "^$${distribution} " tools/bmi-wrappers/requirements.txt)" || { \
+	        echo "ERROR: no pin for $$distribution in tools/bmi-wrappers/requirements.txt"; failed=1; return; }; \
+	    if [ ! -r "$$lib_file" ]; then \
+	        echo "SKIP $$distribution: native library not found -- run 'make -C commands $$target' first"; return; \
+	    fi; \
+	    echo "Installing $$distribution"; \
+	    if env "$$@" LD_LIBRARY_PATH="$(BMI_WRAPPER_LIB_DIRS):$$LD_LIBRARY_PATH" \
+	        LIBRARY_PATH="$(BOOST_BUILT)/lib:$(EWTS_PREFIX)/lib:$$LIBRARY_PATH" \
+	        $(VENV)/bin/pip install $(PIP_FORCE) "$$requirement"; then \
+	        echo "Installed $$distribution"; \
+	    else \
+	        echo "ERROR: pip install failed for $$distribution"; failed=1; \
+	    fi; \
+	}; \
+	install_wrapper pymt_cfe "$(CFE_LIB)" build-cfe-lib \
 	    CFE_ROOT="$(ROOT)/extern/cfe/cfe" \
 	    CFE_LIB_DIR="$(ROOT)/$(CFE_BUILD_DIR)" \
-	    PKG_CONFIG_PATH="$(ROOT)/$(CFE_BUILD_DIR):$$PKG_CONFIG_PATH" \
-	    $(VENV)/bin/pip install "$$(grep '^pymt_cfe ' tools/bmi-wrappers/requirements.txt)" \
-	        && installed=$$((installed + 1)); \
-	else \
-	    echo "SKIP pymt_cfe: $(CFE_BUILD_DIR)/libcfebmi.so not found -- run 'make -C commands build-cfe-lib' first"; \
-	fi; \
-	if [ -r "$(NOAH_LIB)" ]; then \
+	    PKG_CONFIG_PATH="$(ROOT)/$(CFE_BUILD_DIR):$$PKG_CONFIG_PATH"; \
+	install_wrapper pymt_noah_owp "$(NOAH_LIB)" build-noah-lib \
 	    NOAH_ROOT="$(ROOT)/extern/noah-owp-modular/noah-owp-modular" \
 	    NOAH_LIB_DIR="$(ROOT)/extern/noah-owp-modular/cmake_build" \
-	    NOAH_MOD_DIR="$(ROOT)/extern/noah-owp-modular/cmake_build/mod" \
-	    $(VENV)/bin/pip install "$$(grep '^pymt_noah_owp ' tools/bmi-wrappers/requirements.txt)" \
-	        && installed=$$((installed + 1)); \
-	else \
-	    echo "SKIP pymt_noah_owp: extern/noah-owp-modular/cmake_build/libsurfacebmi.so not found -- run 'make -C commands build-noah-lib' first"; \
-	fi; \
-	[ "$$installed" -gt 0 ] || echo "WARNING: no wrapper's shared library was built yet -- nothing installed"
-	@echo -n "wrappers ready: " && \
-	    cd $(ROOT) && $(VENV)/bin/python tools/bmi-wrappers/bmi_introspect.py list
+	    NOAH_MOD_DIR="$(ROOT)/extern/noah-owp-modular/cmake_build/mod"; \
+	install_wrapper pymt_lasam "$(LASAM_LIB)" build-lasam-lib \
+	    LASAM_ROOT="$(ROOT)/extern/lgar-c/LGAR-C" LASAM_LIB_DIR="$(ROOT)/extern/lgar-c/cmake_build" \
+	    LASAM_BMI_DIR="$(ROOT)/extern/lgar-c/LGAR-C/bmi" LASAM_RPATH="$(ROOT)/extern/lgar-c/cmake_build"; \
+	install_wrapper pymt_pet "$(PET_LIB)" build-pet-lib \
+	    PET_ROOT="$(ROOT)/extern/evapotranspiration/evapotranspiration" \
+	    PET_LIB_DIR="$(ROOT)/extern/evapotranspiration/evapotranspiration/cmake_build" \
+	    PKG_CONFIG_PATH="$(ROOT)/extern/evapotranspiration/evapotranspiration/cmake_build:$$PKG_CONFIG_PATH"; \
+	install_wrapper pymt_sac_sma "$(SAC_SMA_LIB)" build-sac-sma-lib \
+	    SAC_SMA_ROOT="$(ROOT)/extern/sac-sma" SAC_SMA_LIB_DIR="$(ROOT)/extern/sac-sma/cmake_build" \
+	    SAC_SMA_BMI_DIR="$(ROOT)/extern/sac-sma/src/bmi" \
+	    ISO_C_FORTRAN_BMI_PATH="$(ROOT)/extern/iso_c_fortran_bmi"; \
+	install_wrapper pymt_sft "$(SFT_LIB)" build-sft-lib \
+	    SFT_ROOT="$(ROOT)/extern/SoilFreezeThaw/SoilFreezeThaw" \
+	    SFT_LIB_DIR="$(ROOT)/$(SFT_BUILD_DIR)" \
+	    SFT_BMI_DIR="$(ROOT)/extern/SoilFreezeThaw/SoilFreezeThaw/bmi"; \
+	install_wrapper pymt_smp "$(SMP_LIB)" build-smp-lib \
+	    SMP_ROOT="$(ROOT)/extern/SoilMoistureProfiles/SoilMoistureProfiles" \
+	    SMP_LIB_DIR="$(ROOT)/$(SMP_BUILD_DIR)" \
+	    SMP_BMI_DIR="$(ROOT)/extern/SoilMoistureProfiles/SoilMoistureProfiles/bmi" \
+	    SMP_RPATH="$(ROOT)/$(SMP_BUILD_DIR)"; \
+	install_wrapper pymt_snow17 "$(SNOW17_LIB)" build-snow17-lib \
+	    SNOW17_ROOT="$(ROOT)/extern/snow17" SNOW17_LIB_DIR="$(ROOT)/extern/snow17/cmake_build" \
+	    SNOW17_BMI_DIR="$(ROOT)/extern/snow17/src/bmi" \
+	    SNOW17_MOD_DIR="$(ROOT)/extern/snow17/cmake_build/iso_c_bmi" \
+	    ISO_C_FORTRAN_BMI_PATH="$(ROOT)/extern/iso_c_fortran_bmi"; \
+	install_wrapper pymt_topmodel "$(TOPMODEL_LIB)" build-topmodel-lib \
+	    TOPMODEL_ROOT="$(ROOT)/extern/topmodel/topmodel" \
+	    TOPMODEL_LIB_DIR="$(ROOT)/extern/topmodel/cmake_build"; \
+	install_wrapper pymt_ueb "$(UEB_LIB)" build-ueb-lib \
+	    UEB_ROOT="$(ROOT)/extern/ueb-bmi" UEB_LIB_DIR="$(ROOT)/extern/ueb-bmi/cmake_build/src" \
+	    UEB_RPATH="$(ROOT)/extern/ueb-bmi/cmake_build/src" \
+	    CPLUS_INCLUDE_PATH="$(EWTS_PREFIX)/include:$(BOOST_BUILT)/include:$$CPLUS_INCLUDE_PATH"; \
+	echo "wrappers ready:"; \
+	if ! LD_LIBRARY_PATH="$(BMI_WRAPPER_LIB_DIRS):$$LD_LIBRARY_PATH" \
+	    $(VENV)/bin/python tools/bmi-wrappers/bmi_introspect.py list; then failed=1; fi; \
+	exit $$failed
 
-# CONFIG and REALIZATION are optional; without CONFIG the registry's sample is
-# used. Exits non-zero when a REALIZATION cross-check finds a real error.
+# CONFIG, WORKDIR, and REALIZATION are optional; without CONFIG the registry's
+# sample is used when available. Exits non-zero when a cross-check finds an error.
 .PHONY: bmi-io
 bmi-io:
 	$(require_venv)
-	@cd $(ROOT) && $(VENV)/bin/python tools/bmi-wrappers/bmi_introspect.py $(MODEL) \
+	@cd $(ROOT) && LD_LIBRARY_PATH="$(BMI_WRAPPER_LIB_DIRS):$$LD_LIBRARY_PATH" \
+	    $(VENV)/bin/python tools/bmi-wrappers/bmi_introspect.py $(MODEL) \
 	    $(if $(CONFIG),--config $(CONFIG)) \
+	    $(if $(WORKDIR),--workdir $(WORKDIR)) \
 	    $(if $(REALIZATION),--realization $(REALIZATION)) \
 	    $(if $(CATCHMENT),--catchment $(CATCHMENT)) \
 	    $(BMI_IO_FLAGS)

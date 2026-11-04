@@ -53,6 +53,7 @@ The setup tasks map to `setup-venv`, `setup-boost` and `setup-ewts`; the build t
 All of it from a terminal instead: `make -C commands configure && make -C commands build`
 
 Verify:
+
 ```bash
 ./cmake_build/ngen \
     ./data/catchment_data.geojson "cat-27,cat-52" \
@@ -91,10 +92,12 @@ make -C commands build TARGETS=ngen
 ```
 
 Verify:
+
 ```bash
 ./cmake_build/ngen data/catchment_data.geojson "cat-27" data/nexus_data.geojson "nex-26" \
     data/example_bmi_multi_realization_config_w_noah_pet_cfe.json
 ```
+
 Should end with `Finished 720 timesteps.` and write `output_dir/cat-27.csv` and
 `output_dir/nex-26_output.csv`. Unit-conversion `WARN` lines are expected.
 
@@ -139,9 +142,13 @@ make -C commands build TARGETS="ngen bmiuebcxx surfacebmi"
 ```
 
 Verify:
+
 ```bash
 ./cmake_build/ngen --info
 ```
+
+NOTE: Activate enviornment `source .venv-linux/bin/activate` first.
+
 Should report `BMI_FORTRAN: ON`, `BMI_C: ON`, `PYTHON: ON`, `ROUTING: ON`, and extern models
 `SLOTH`, `TOPMODEL`, `CFE`, `PET`, `NOAH_OWP_MODULAR`, `UEB` all ON.
 
@@ -153,36 +160,59 @@ Asks a model what it actually consumes and produces, by querying the compiled
 model through a Python BMI wrapper. Introspection only — it does not change how
 ngen runs.
 
-Order matters: each wrapper is an extension that links its model's shared library.
-`build-cfe-lib` is fully independent of your main `cmake_build` (extern/cfe is
-its own standalone CMake project). `build-noah-lib` is not: extern/noah-owp-modular
-only builds correctly as part of the main project, so it reconfigures the same
-`cmake_build` your other configure tasks use, with the Fortran configure's flags —
-if `cmake_build` was previously configured differently (e.g. for Python), this
-reverts it, the same as switching between any two configure tasks would; run
-`make -C commands clean` first if you want a from-scratch reconfigure instead.
+Each wrapper is a compiled extension linked to its model's native BMI library.
+Build the native library for each model you want to inspect, then install the
+available wrappers. The Python venv is shared with the Python-enabled ngen
+configuration; create it once if you have not already.
 
 ```bash
-make -C commands setup-venv            # if you have not already
-make -C commands build-cfe-lib         # extern/cfe -> libcfebmi.so
-make -C commands build-noah-lib        # reconfigures cmake_build for Fortran -> extern/noah-owp-modular/cmake_build/libsurfacebmi.so
-make -C commands install-bmi-wrappers  # pip install into .venv-linux, per-wrapper
+make -C commands setup-venv           # if you have not already
+make -C commands build-cfe-lib        # example; choose targets from the list below
+make -C commands install-bmi-wrappers # installs wrappers whose libraries exist
 ```
 
-`install-bmi-wrappers` installs each wrapper individually, gated on its own
-library already being built — a missing Noah lib only skips Noah's wrapper,
-not CFE's, and vice versa.
+The native-library targets are `build-cfe-lib`, `build-noah-lib`,
+`build-lasam-lib`, `build-pet-lib`, `build-sac-sma-lib`, `build-sft-lib`,
+`build-smp-lib`, `build-snow17-lib`, `build-topmodel-lib`, and `build-ueb-lib`.
+`build-bmi-wrapper-libs` builds all ten; normally, build only the models you
+need. UEB additionally requires `setup-boost` and `setup-ewts`. Noah's target
+reconfigures the shared `cmake_build` for the Fortran build, so it can change
+the active ngen configuration; run **Clean ngen** first if you need a clean
+reconfigure. The individual build target picker and wrapper model picker are
+also available as VS Code tasks.
+
+The install target handles each package independently: a missing library
+skips only that wrapper, while an actual package-install failure makes the
+target fail. It also sets the native library loader paths used by the wrappers.
+
+Rerunning the install silently keeps wrappers that are already installed (it
+still prints `Installed <name>`), even if `requirements.txt` changed or a
+native library was rebuilt or moved. Force a
+rebuild with `FORCE=1` (VS Code task: **Setup: Reinstall BMI Python wrappers
+(force)**):
+
+```bash
+make -C commands install-bmi-wrappers FORCE=1
+```
 
 Then:
 
 ```bash
-make -C commands bmi-io                                     # CFE inputs/outputs
+make -C commands bmi-io MODEL=cfe
 make -C commands bmi-io MODEL=noah CONFIG=data/gauge_01073000/NOAH/cat-11223.input
+make -C commands bmi-io MODEL=topmodel
 make -C commands bmi-io REALIZATION=data/example_bmi_multi_realization_config_w_noah_pet_cfe.json
 ```
 
-The second form cross-checks a realization config's `variables_names_map` against
-the model's real variables and exits non-zero on a genuine error. See
+Supported model keys: `cfe`, `noah`, `lasam`, `pet`, `sac_sma`, `sft`, `smp`,
+`snow17`, `topmodel`, and `ueb`. A few models do not have a verified sample
+initialization config, so pass `CONFIG=...` for those. Use `WORKDIR=...` when
+the config's relative paths should resolve from a different directory; the
+registry already supplies the working directory for its LASAM, SFT, TOPMODEL,
+and UEB samples. SAC-SMA and SNOW-17 need a scratch copy of their `ex1`
+example with `n_hrus` set to 1 (see the README). `REALIZATION=...` cross-checks the model's real variables against a
+realization config and exits non-zero on a genuine error. For detailed library
+paths, per-model requirements, or direct CLI use, see
 [tools/bmi-wrappers/README.md](tools/bmi-wrappers/README.md).
 
 ---
@@ -204,4 +234,6 @@ the model's real variables and exits non-zero on a genuine error. See
   [.vscode/launch.json](.vscode/launch.json).
 - The BMI wrapper tooling installs into the same `.venv-linux`, but is never imported by
   the `ngen` binary — it is a developer aid, not part of any build.
-- Not covered here: MPI, and the `NGEN_WITH_EXTERN_SMP` / `NGEN_WITH_EXTERN_SFT` models.
+- Not covered here: MPI. The optional `NGEN_WITH_EXTERN_SMP` and
+  `NGEN_WITH_EXTERN_SFT` runtime integrations are separate from building their
+  native libraries for Python introspection.
