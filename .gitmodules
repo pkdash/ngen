@@ -28,6 +28,7 @@
 	path = extern/evapotranspiration/evapotranspiration
 	url = https://github.com/NOAA-OWP/evapotranspiration.git
     branch = master
+	ignore = untracked
 [submodule "extern/SoilFreezeThaw/SoilFreezeThaw"]
 	path = extern/SoilFreezeThaw/SoilFreezeThaw
 	url = https://github.com/NOAA-OWP/SoilFreezeThaw
@@ -59,12 +60,15 @@
 [submodule "extern/sac-sma"]
 	path = extern/sac-sma
 	url = https://github.com/NOAA-OWP/sac-sma
+	ignore = untracked
 [submodule "extern/snow17"]
 	path = extern/snow17
 	url = https://github.com/NOAA-OWP/snow17
+	ignore = untracked
 [submodule "extern/ueb-bmi"]
 	path = extern/ueb-bmi
 	url = https://github.com/NGWPC/ueb_bmi.git
+	ignore = untracked
 [submodule "extern/ewts"]
 	path = extern/ewts
 	url = https://github.com/NGWPC/nwm-ewts-archive.git
