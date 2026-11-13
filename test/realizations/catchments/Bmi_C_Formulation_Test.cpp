@@ -177,7 +177,7 @@ void Bmi_C_Formulation_Test::SetUp() {
     /* Set up the derived example details */
     for (int i = 0; i < EX_COUNT; i++) {
         std::shared_ptr<forcing_params> params = std::make_shared<forcing_params>(
-                forcing_params(forcing_file[i], "legacy", "2015-12-01 00:00:00", "2015-12-30 23:00:00"));
+                forcing_params(forcing_file[i], "legacy", "2015-12-01 00:00:00", "2015-12-30 23:00:00", true));
         std::string variables_line = (i == 1) ? variables_with_rain_rate : "";
         forcing_params_examples[i] = params;
         config_json[i] = "{"
@@ -272,6 +272,37 @@ TEST_F(Bmi_C_Formulation_Test, set_initial_parameters_0_a) {
     ASSERT_EQ(param3.size(), 2);
     ASSERT_EQ(param3[0], 4.0);
     ASSERT_EQ(param3[1], 2.0);
+}
+
+/**
+ * A model_params value whose element count differs from the BMI variable's
+ * (GetVarNbytes / GetVarItemsize) is skipped with a warning, and the other
+ * parameters are still set. PARAM_VAR_3 holds 2 doubles, initialized to 0.
+ */
+TEST_F(Bmi_C_Formulation_Test, set_initial_parameters_0_b) {
+    int ex_index = 0;
+    const std::string original = "\"PARAM_VAR_3\": [4, 2]";
+    for (const std::string& wrong : {std::string("\"PARAM_VAR_3\": 7.0"),
+                                     std::string("\"PARAM_VAR_3\": [4, 2, 1]")}) {
+        std::string json = config_json[ex_index];
+        std::size_t at = json.find(original);
+        ASSERT_NE(at, std::string::npos);
+        json.replace(at, original.size(), wrong);
+        std::stringstream stream(json);
+        boost::property_tree::ptree tree;
+        boost::property_tree::json_parser::read_json(stream, tree);
+
+        Bmi_C_Formulation formulation(catchment_ids[ex_index], std::make_shared<CsvPerFeatureForcingProvider>(*forcing_params_examples[ex_index]), utils::StreamHandler());
+        formulation.create_formulation(tree.get_child("catchments").get_child(catchment_ids[ex_index]).get_child("bmi_c"));
+
+        std::shared_ptr<models::bmi::Bmi_C_Adapter> bmi_c_adapter = get_friend_bmi_model(formulation);
+        ASSERT_EQ(models::bmi::GetValue<int>(*bmi_c_adapter, "PARAM_VAR_1")[0], 42) << wrong;
+        ASSERT_EQ(models::bmi::GetValue<double>(*bmi_c_adapter, "PARAM_VAR_2")[0], 4.2) << wrong;
+        std::vector<double> param3 = models::bmi::GetValue<double>(*bmi_c_adapter, "PARAM_VAR_3");
+        ASSERT_EQ(param3.size(), 2) << wrong;
+        ASSERT_EQ(param3[0], 0.0) << wrong;
+        ASSERT_EQ(param3[1], 0.0) << wrong;
+    }
 }
 
 /** Test of get response after several iterations. */

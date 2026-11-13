@@ -526,6 +526,23 @@ namespace realization {
                             logging::warning(("Cannot pass parameter of type "+geojson::get_propertytype_name(param.second.get_type())+" as a BMI parameter, skipping "+param.first+"\n").c_str());
                             continue;
                     }
+                    // SetValue copies the variable's full GetVarNbytes from value_ptr, so a
+                    // value with fewer elements than the variable holds would be read past
+                    // its end. A count that differs either way is a configuration mistake
+                    // (e.g. a scalar for a per-soil-layer variable), so skip it loudly.
+                    {
+                        std::size_t given = long_vec.size() + double_vec.size(); // only one is filled
+                        std::size_t expected = varItemSize > 0 ? static_cast<std::size_t>(totalBytes / varItemSize) : 0;
+                        if (given != expected) {
+                            logging::warning(("Parameter " + param.first + " has " + std::to_string(given) +
+                                              " value(s), but the model's BMI variable holds " +
+                                              std::to_string(expected) + "\n").c_str());
+                            logging::warning(("Skipping parameter: " + param.first + "\n").c_str());
+                            long_vec.clear();
+                            double_vec.clear();
+                            continue;
+                        }
+                    }
                     try{
 
                         // Finally, use the value obtained to set the model param
