@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ngen-bmi"
+version = "0.1.0"
+description = "Set up, parameterize and run ngen realizations from Python, using the pymt_* BMI wrappers as the parameter authority"
+requires-python = ">=3.9"
+# bmi-setup comes from pkdash/BMI (bmi_setup/); it is not on PyPI.
+dependencies = ["bmi-setup>=0.4", "numpy<2", "pandas"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.setuptools]
+packages = ["ngen_bmi"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "ngen: needs the ngen binary (BMI C and Fortran), the built model libraries and the pymt_* wrappers",
+]

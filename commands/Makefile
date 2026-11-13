@@ -160,6 +160,14 @@ help:
 	@echo "                        FORCE=1 rebuilds already-installed wrappers"
 	@echo "  bmi-io                Query a model: MODEL=cfe|noah|lasam|pet|sac_sma|sft|smp|snow17|topmodel|ueb"
 	@echo "                        Optional: CONFIG=... WORKDIR=... REALIZATION=..."
+	@echo "                        BMI_REF=<tag|branch> installs wrappers from another pkdash/BMI ref"
+	@echo
+	@echo "ngen_bmi (set up, parameterize and run ngen from Python; tools/ngen-bmi):"
+	@echo "  install-ngen-bmi      pip install bmi_setup and ngen_bmi (editable) into the venv"
+	@echo "                        BMI_SETUP=/path/to/BMI/bmi_setup installs a local checkout"
+	@echo "  test-ngen-bmi         Unit, wrapper-integration and ngen-integration tests;"
+	@echo "                        layers whose prerequisites are missing are skipped"
+	@echo "  ngen-bmi-example      Run tools/ngen-bmi/examples/change_parameters.py (OUT=dir)"
 	@echo
 	@echo "Build targets per configuration:"
 	@echo "  default   TARGETS=\"ngen testbmicppmodel\"       ueb   TARGETS=\"ngen bmiuebcxx\""
@@ -445,6 +453,12 @@ build-bmi-wrapper-libs:
 # from touching numpy (<2 pin).
 PIP_FORCE := $(if $(filter 1 yes true,$(FORCE)),--force-reinstall --no-deps)
 
+# BMI_REF installs the wrappers from another pkdash/BMI tag, branch or commit
+# than the one pinned in requirements.txt, e.g. to try a fix before it is
+# tagged. bmi_setup needs the get/set_value fixes that came after v0.3.0:
+#     make -C commands install-bmi-wrappers BMI_REF=add-bmi-setup FORCE=1
+BMI_REF ?=
+
 # Install independently: a missing library or a pip failure for one wrapper
 # must not mask successful installs or prevent attempts for the others.
 .PHONY: install-bmi-wrappers
@@ -455,6 +469,7 @@ install-bmi-wrappers:
 	    distribution="$$1"; lib_file="$$2"; target="$$3"; shift 3; \
 	    requirement="$$(grep -m1 "^$${distribution} " tools/bmi-wrappers/requirements.txt)" || { \
 	        echo "ERROR: no pin for $$distribution in tools/bmi-wrappers/requirements.txt"; failed=1; return; }; \
+	    $(if $(BMI_REF),requirement="$$(echo "$$requirement" | sed -E 's|(BMI\.git)@[^#]+#|\1@$(BMI_REF)#|')";) \
 	    if [ ! -r "$$lib_file" ]; then \
 	        echo "SKIP $$distribution: native library not found -- run 'make -C commands $$target' first"; return; \
 	    fi; \
@@ -524,3 +539,87 @@ bmi-io:
 	    $(if $(REALIZATION),--realization $(REALIZATION)) \
 	    $(if $(CATCHMENT),--catchment $(CATCHMENT)) \
 	    $(BMI_IO_FLAGS)
+
+# ---------------------------------------------------------------------------
+# ngen_bmi: set up, parameterize and run ngen from Python (tools/ngen-bmi)
+# ---------------------------------------------------------------------------
+
+# Where bmi_setup comes from. Default: pkdash/BMI at BMI_SETUP_REF. A directory
+# (a local pkdash/BMI checkout's bmi_setup/) is installed editable, and its own
+# tests then join test-ngen-bmi.
+# TODO: point BMI_SETUP_REF at the release tag once pkdash/BMI tags bmi_setup.
+BMI_SETUP_REF ?= add-bmi-setup
+BMI_SETUP     ?= git+https://github.com/pkdash/BMI.git@$(BMI_SETUP_REF)\#subdirectory=bmi_setup
+
+.PHONY: install-ngen-bmi
+install-ngen-bmi:
+	$(require_venv)
+	@cd $(ROOT) && \
+	if [ -d "$(BMI_SETUP)" ]; then src=(-e "$(BMI_SETUP)"); else src=("bmi-setup @ $(BMI_SETUP)"); fi && \
+	$(VENV)/bin/pip install "numpy<2.0" "$${src[@]}" && \
+	$(VENV)/bin/pip install "numpy<2.0" -e "tools/ngen-bmi[test]" && \
+	$(VENV)/bin/python -c "import bmi_setup, ngen_bmi; print('bmi_setup and ngen_bmi', ngen_bmi.__version__, 'installed')"
+
+# Three layers:
+#   1. unit tests of ngen_bmi, and of bmi_setup when installed from a checkout;
+#   2. bmi_setup's wrapper integration (-m wrappers), for each model whose
+#      pymt_* wrapper imports; the PYMT_<KEY>_CONFIG defaults below are the
+#      configs that layer was verified with, and can be overridden;
+#   3. ngen integration (-m ngen), which skips itself without cmake_build/ngen
+#      (or $$NGEN_BIN) built with BMI C and Fortran.
+# TOPMODEL's wrapper test needs a libtopmodelbmi.so with the get_var_nbytes
+# fix (see topmodel-issue-ticket.md); an unfixed library fails the catalog check. Here,
+# unlike bmi-io, the caller's LD_LIBRARY_PATH comes first, so a fixed library
+# built elsewhere can stand in (the wrappers link with RUNPATH, which
+# LD_LIBRARY_PATH overrides):
+#     LD_LIBRARY_PATH=/path/to/topmodel/cmake_build make -C commands test-ngen-bmi
+# CFE works the other way round (see cfe-issue-ticket.md). The catalog marks
+# max_gw_storage "differs", because CFE's Set_value does not rescale the
+# groundwater storage, so ngen_bmi edits the config for it. Layer 2 re-checks
+# that status. Against a libcfebmi.so built with the upstream fix, it fails
+# for max_gw_storage until the bmi_setup catalog says "equivalent". Layer 3 is
+# unaffected either way.
+# build-cfe-lib and build-topmodel-lib run `git submodule update`, which refuses
+# while the submodule is checked out on a fix branch with local changes.
+NGEN_BMI_FORCING := $(ROOT)/data/forcing/cat-27_2015-12-01 00_00_00_2015-12-30 23_00_00.csv
+
+.PHONY: test-ngen-bmi
+test-ngen-bmi:
+	$(require_venv)
+	@cd $(ROOT) && py="$(ROOT)/$(VENV)/bin/python" && failed=0 && \
+	export LD_LIBRARY_PATH="$${LD_LIBRARY_PATH:+$$LD_LIBRARY_PATH:}$(BMI_WRAPPER_LIB_DIRS)" && \
+	{ $$py -c "import bmi_setup, ngen_bmi" 2>/dev/null || { \
+	    echo "ERROR: bmi_setup or ngen_bmi is not installed in $(VENV). Run 'make -C commands install-ngen-bmi' first."; exit 1; }; } && \
+	default_config() { \
+	    var="PYMT_$$1_CONFIG"; \
+	    if [ -n "$${!var}" ]; then return; fi; \
+	    if $$py -c "import $$2" >/dev/null 2>&1; then \
+	        export "$$var=$(ROOT)/$$3"; \
+	        if [ -n "$$4" ]; then export "PYMT_$$1_WORKDIR=$(ROOT)/$$4"; fi; \
+	    else echo "SKIP $$2 wrapper tests: not installed"; fi; \
+	}; \
+	default_config CFE pymt_cfe data/gauge_01073000/CFE/cat-11223_bmi_config_cfe_pass.txt; \
+	default_config NOAH_OWP pymt_noah_owp data/gauge_01073000/NOAH/cat-11223.input .; \
+	default_config PET pymt_pet data/gauge_01073000/PET/cat-11223_pet_config.txt; \
+	default_config TOPMODEL pymt_topmodel extern/topmodel/topmodel/data/topmod.run extern/topmodel/topmodel; \
+	export BMI_SETUP_FORCING_CSV="$${BMI_SETUP_FORCING_CSV:-$(NGEN_BMI_FORCING)}"; \
+	echo "== 1. ngen_bmi unit tests"; \
+	$$py -m pytest -q tools/ngen-bmi -m "not ngen" || failed=1; \
+	bmi_src="$$($$py -c 'import bmi_setup, pathlib; print(pathlib.Path(bmi_setup.__file__).resolve().parents[1])')"; \
+	if [ -r "$$bmi_src/tests/test_catalog.py" ]; then \
+	    echo "== 1. bmi_setup unit tests ($$bmi_src)"; \
+	    (cd "$$bmi_src" && $$py -m pytest -q -m "not wrappers") || failed=1; \
+	    echo "== 2. bmi_setup wrapper integration"; \
+	    (cd "$$bmi_src" && $$py -m pytest -q -rs -m wrappers) || failed=1; \
+	else \
+	    echo "SKIP bmi_setup unit and wrapper tests: installed without its source; use install-ngen-bmi BMI_SETUP=/path/to/BMI/bmi_setup"; \
+	fi; \
+	echo "== 3. ngen integration"; \
+	$$py -m pytest -q -rs tools/ngen-bmi -m ngen || failed=1; \
+	exit $$failed
+
+.PHONY: ngen-bmi-example
+ngen-bmi-example:
+	$(require_venv)
+	@cd $(ROOT) && LD_LIBRARY_PATH="$${LD_LIBRARY_PATH:+$$LD_LIBRARY_PATH:}$(BMI_WRAPPER_LIB_DIRS)" \
+	    $(VENV)/bin/python tools/ngen-bmi/examples/change_parameters.py $(if $(OUT),--out $(OUT))

@@ -297,10 +297,18 @@ entries for variables CFE does not have.
 5. Add the model key to the `bmiModel` and native-build picker inputs in
    `.vscode/tasks.json`.
 
-`realization_model_types` is how the cross-check recognizes the model inside a
-realization config; it is matched against `model_type_name`.
+`realization_model_types` is how the cross-check, and `ngen_bmi`, recognize the
+model inside a realization config. Each entry is compared with `model_type_name`
+exactly, ignoring case, so list every spelling the realizations use (PET has
+`bmi_c_pet`, `pet` and `test_bmi_pet`).
 
 ## Registry format
 
 `wrappers.json`, not TOML: the devcontainer runs Python 3.10, which has no stdlib
 `tomllib`, and this tool deliberately depends on nothing beyond numpy.
+
+The registry is read in one place, `tools/ngen-bmi/ngen_bmi/registry.py`, which
+both this script and the `ngen_bmi` package use. That module needs only the
+standard library, so `bmi_introspect.py` runs without `ngen_bmi` installed.
+`bmi_setup_key` links an entry to its `bmi_setup` model and parameter catalog;
+only `ngen_bmi` uses it.

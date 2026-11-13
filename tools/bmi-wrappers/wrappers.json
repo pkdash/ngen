@@ -3,7 +3,11 @@
     "Registry of Python BMI wrapper packages usable for introspection.",
     "Paths are relative to the ngen repo root. JSON rather than TOML because the",
     "devcontainer ships Python 3.10, which has no stdlib tomllib.",
-    "Every distribution is pinned in requirements.txt; sample configs are optional."
+    "Every distribution is pinned in requirements.txt; sample configs are optional.",
+    "bmi_setup_key links a model to its bmi_setup (pkdash/BMI) model and parameter catalog; ngen_bmi needs it.",
+    "Only models with a bmi_setup catalog (cfe, noah, pet, topmodel) have the key. Without it ngen_bmi cannot set",
+    "that model's parameters, but bmi_introspect.py still works. Add it after adding a catalog to bmi_setup/catalogs/.",
+    "realization_model_types are matched exactly, ignoring case (ngen_bmi.registry.matches_model_type)."
   ],
 
   "cfe": {
@@ -11,6 +15,7 @@
     "distribution": "pymt_cfe",
     "import_path": "pymt_cfe",
     "class_name": "CFE",
+    "bmi_setup_key": "cfe",
     "lib_file": "extern/cfe/cmake_build/libcfebmi.so",
     "build_env": {
       "CFE_ROOT": "extern/cfe/cfe",
@@ -25,6 +30,7 @@
     "distribution": "pymt_noah_owp",
     "import_path": "pymt_noah_owp",
     "class_name": "NOAH_OWP",
+    "bmi_setup_key": "noah",
     "lib_file": "extern/noah-owp-modular/cmake_build/libsurfacebmi.so",
     "build_env": {
       "NOAH_ROOT": "extern/noah-owp-modular/noah-owp-modular",
@@ -56,13 +62,14 @@
     "distribution": "pymt_pet",
     "import_path": "pymt_pet",
     "class_name": "PET",
+    "bmi_setup_key": "pet",
     "lib_file": "extern/evapotranspiration/evapotranspiration/cmake_build/libpetbmi.so",
     "build_env": {
       "PET_ROOT": "extern/evapotranspiration/evapotranspiration",
       "PET_LIB_DIR": "extern/evapotranspiration/evapotranspiration/cmake_build"
     },
     "sample_config": "data/gauge_01073000/PET/cat-11223_pet_config.txt",
-    "realization_model_types": ["bmi_c_pet", "pet"]
+    "realization_model_types": ["bmi_c_pet", "pet", "test_bmi_pet"]
   },
 
   "sac_sma": {
@@ -132,6 +139,7 @@
     "distribution": "pymt_topmodel",
     "import_path": "pymt_topmodel",
     "class_name": "TOPMODEL",
+    "bmi_setup_key": "topmodel",
     "lib_file": "extern/topmodel/cmake_build/libtopmodelbmi.so",
     "build_env": {
       "TOPMODEL_ROOT": "extern/topmodel/topmodel",

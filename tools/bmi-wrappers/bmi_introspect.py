@@ -56,8 +56,14 @@ def model_chatter_to_stderr():
         os.close(saved)
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-REGISTRY_PATH = Path(__file__).resolve().parent / "wrappers.json"
+# The registry (wrappers.json) is loaded by ngen_bmi.registry, shared with the
+# ngen_bmi package. That module needs only the standard library, so this script
+# still runs in a venv where ngen_bmi is not installed.
+try:
+    from ngen_bmi.registry import REPO_ROOT, load_registry, matches_model_type
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "ngen-bmi"))
+    from ngen_bmi.registry import REPO_ROOT, load_registry, matches_model_type
 
 # Where ngen defines the forcing identifiers the framework can supply. Parsed at
 # runtime rather than copied, so this tool cannot drift from the C++ source.
@@ -67,12 +73,6 @@ FORCING_HEADER = REPO_ROOT / "include" / "forcing" / "AorcForcing.hpp"
 # --------------------------------------------------------------------------
 # Registry
 # --------------------------------------------------------------------------
-
-def load_registry():
-    with open(REGISTRY_PATH) as fp:
-        raw = json.load(fp)
-    return {k: v for k, v in raw.items() if not k.startswith("_")}
-
 
 def resolve_model_class(entry):
     module = importlib.import_module(entry["import_path"])
@@ -219,9 +219,7 @@ def iter_modules(formulation):
 
 
 def matches_model(module, entry):
-    wanted = {w.lower() for w in entry.get("realization_model_types", [])}
-    mtn = str(module.get("params", {}).get("model_type_name", "")).lower()
-    return mtn in wanted or any(w in mtn for w in wanted)
+    return matches_model_type(module.get("params", {}).get("model_type_name"), entry)
 
 
 def _display_path(path):

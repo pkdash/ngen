@@ -215,6 +215,32 @@ realization config and exits non-zero on a genuine error. For detailed library
 paths, per-model requirements, or direct CLI use, see
 [tools/bmi-wrappers/README.md](tools/bmi-wrappers/README.md).
 
+## ngen_bmi: set up, parameterize and run ngen from Python (optional)
+
+`tools/ngen-bmi` changes CFE, Noah-OWP, PET and TOPMODEL parameters from Python and runs
+`ngen` on the result. It uses the wrappers above through `bmi_setup` (pkdash/BMI).
+Prerequisites:
+- an ngen build with BMI-C and Fortran (**BMI-C + Fortran/Noah** above);
+- the native libraries of these models;
+- the wrappers installed from a pkdash/BMI ref that has the get/set_value fixes from after
+  `v0.3.0`.
+
+```bash
+make -C commands install-bmi-wrappers BMI_REF=add-bmi-setup FORCE=1
+make -C commands install-ngen-bmi          # bmi_setup from pkdash/BMI, ngen_bmi editable
+make -C commands test-ngen-bmi             # unit, wrapper-integration and ngen-integration tests
+make -C commands ngen-bmi-example OUT=/tmp/ngen_bmi_example
+```
+
+- **Local `bmi_setup`.** `install-ngen-bmi BMI_SETUP=/path/to/BMI/bmi_setup` installs a local
+  checkout in editable mode. Its own unit and wrapper tests then join `test-ngen-bmi`.
+- **Skipped layers.** `test-ngen-bmi` skips a test layer when its prerequisites are missing.
+- **TOPMODEL.** The TOPMODEL wrapper test needs a `libtopmodelbmi.so` built with the
+  `get_var_nbytes` fix. A library built elsewhere can stand in: put its directory first, as in
+  `LD_LIBRARY_PATH=<dir> make -C commands test-ngen-bmi`.
+
+See [tools/ngen-bmi/README.md](tools/ngen-bmi/README.md).
+
 ---
 
 ## Notes
