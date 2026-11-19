@@ -4,6 +4,64 @@ Set up, parameterize and run an ngen realization from Python. The `pymt_*` BMI w
 `bmi_setup` (pkdash/BMI), decide what a parameter is called, its type and its length. ngen runs
 the simulation.
 
+## Before you start (devcontainer)
+
+Run these once, from the repo root inside the devcontainer, in this order. The Python code below
+needs all of them.
+
+```sh
+make -C commands setup-venv          # creates the workspace venv .venv-linux (numpy<2)
+make -C commands configure-fortran   # ngen with BMI C + Fortran (CFE, PET, SLoTH, Noah-OWP)
+make -C commands build               # builds ngen and the model libraries the realization loads
+make -C commands install-bmi-wrappers BMI_REF=add-bmi-setup FORCE=1   # pymt_* wrappers
+make -C commands install-ngen-bmi    # bmi_setup (pkdash/BMI) and ngen_bmi, editable
+```
+
+- **Build configuration.** The default `make -C commands configure` turns off BMI C and Fortran.
+  A binary built that way cannot run CFE, PET or Noah, so `run()` raises `NgenRunError`. Check
+  the active configuration with `make -C commands show-config`.
+- **Missing wrappers.** `install-bmi-wrappers` skips any wrapper whose native library is missing
+  and tells you which `build-*-lib` target to run. With `build` done first, CFE, Noah-OWP and
+  PET install. Ignore the skips for models you don't use.
+- **Activate the venv.** Every package above goes into `.venv-linux`, and the Make targets call
+  its interpreter directly. To run your own Python (a script, `python -m pytest`, a REPL),
+  activate it first, from the repo root:
+
+  ```sh
+  source .venv-linux/bin/activate
+  ```
+
+  Or call `.venv-linux/bin/python` directly. The venv is a Linux build, so use it only inside
+  the container.
+- **Working directory.** Start Python from the repo root, or pass `root=` to `Project.load`.
+  Relative paths such as `data/...` are resolved from there.
+
+### Next sessions
+
+The setup does not need repeating. The repo folder is bind-mounted from the host, so
+`cmake_build/ngen`, the model libraries in `extern/*/cmake_build/` and `.venv-linux` are kept
+when the container is reopened, restarted or rebuilt. A new session only needs
+`source .venv-linux/bin/activate`.
+
+Rebuild only in these cases:
+
+- **Code changed.** After a `git pull`, a submodule update or your own edits to model or ngen
+  code, run `make -C commands build`. If a library that a wrapper links changed, also run
+  `install-bmi-wrappers ... FORCE=1`.
+- **Configuration changed.** Every `configure-*` target writes to the same `cmake_build`. After
+  `configure` or `configure-python` and a `build`, ngen no longer runs CFE or Noah. Check with
+  `make -C commands show-config`. To restore it, run `configure-fortran` and then `build`.
+- **Container image changed.** After the Dockerfile changes and the container is rebuilt, the
+  system libraries (NetCDF, gfortran, ...) may differ from the ones the binaries were linked
+  against. If ngen or a wrapper then fails to load a `.so`, run `make -C commands rebuild` and
+  reinstall the wrappers with `FORCE=1`.
+- **`/opt` was wiped.** The compiled Boost (`/opt/boost-built`) and EWTS (`/opt/ewts`) live in
+  the container, not the repo, so a container rebuild removes them. Only UEB and
+  `configure-all` need them; restore them with `setup-boost` and `setup-ewts`. CFE, Noah-OWP and
+  PET do not use them.
+
+## Usage
+
 ```python
 from ngen_bmi import Project
 
@@ -76,11 +134,11 @@ truncates its rate to `int`). It is outside BMI and has no ticket; the catalog k
 
 ## Install, test and the worked example (devcontainer)
 
-Use the Make targets. Each one installs into, or runs from, the workspace venv (`.venv-linux`):
+Use the Make targets. Each one installs into, or runs from, the workspace venv (`.venv-linux`), so
+none of them needs the venv to be active. The setup steps are in
+[Before you start](#before-you-start-devcontainer).
 
 ```sh
-make -C commands install-bmi-wrappers BMI_REF=add-bmi-setup FORCE=1   # wrappers with the get/set_value fixes
-make -C commands install-ngen-bmi                 # bmi_setup (pkdash/BMI) and this package, editable
 make -C commands test-ngen-bmi                    # all three test layers; missing prerequisites skip a layer
 make -C commands ngen-bmi-example OUT=/tmp/ex     # examples/change_parameters.py
 ```
@@ -97,9 +155,10 @@ make -C commands ngen-bmi-example OUT=/tmp/ex     # examples/change_parameters.p
 - **Loader path.** `LD_LIBRARY_PATH` from the caller comes first. That lets a fixed library
   (TOPMODEL's `get_var_nbytes`) built outside `extern/` stand in for the one the wrapper links.
 
-Without Make:
+Without Make, activate the venv first:
 
 ```sh
+source .venv-linux/bin/activate
 python -m pip install -e tools/ngen-bmi            # needs bmi-setup, numpy<2, pandas
 python -m pytest tools/ngen-bmi -m "not ngen"     # unit tests, no native code
 python -m pytest tools/ngen-bmi -m ngen           # needs cmake_build/ngen (BMI C + Fortran) and the wrappers
