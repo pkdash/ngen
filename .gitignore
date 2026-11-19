@@ -141,3 +141,6 @@ data/hydrofabric/huc01_demo/
 # NGen execution artifacts
 ##############################
 output_dir/
+
+# NGen run-related artifacts
+runs/
