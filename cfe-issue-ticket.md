@@ -92,3 +92,35 @@ Built from `master` (`f9182df`) with `-DNGEN=ON`, with and without the change:
 - **End to end through a BMI host** (the A/B comparison above, 720 steps, every output compared bit-for-bit):
   - `max_gw_storage` goes from differing (up to 61% of peak `DEEP_GW_TO_CHANNEL_FLUX`) to **bit-identical**;
   - the results for all other 17 calibratable parameters are unchanged.
+
+## Local fix in this ngen checkout
+
+_For ngen-bmi work. Remove this section before filing the ticket upstream._
+
+- **Branch:** `fix-max-gw-storage-set-value` in `extern/cfe/cfe`, commit `3ec291a`, based on upstream `master` (`f9182df`). It changes `src/bmi_cfe.c`, `test/test_bmi_model.c` and `CMakeLists.txt`.
+- **The branch exists only in this machine's submodule clone.** It has not been pushed. A copy is saved as [`patches/cfe/0001-WIP-max_gw_storage-set_value-fix.patch`](patches/cfe/0001-WIP-max_gw_storage-set_value-fix.patch).
+- **ngen's pin is `a349a95`, not `master`.** The full patch does not apply there: `test/test_bmi_model.c` does not exist at the pin and the `CMakeLists.txt` hunk conflicts. The `src/bmi_cfe.c` hunk, which is the fix itself, applies cleanly.
+
+**Get the fix back:**
+
+```sh
+# Branch still in the submodule clone
+git -C extern/cfe/cfe switch fix-max-gw-storage-set-value
+
+# Branch lost (fresh clone or re-cloned submodule): recreate it from the patch
+git -C extern/cfe/cfe switch -c fix-max-gw-storage-set-value f9182df
+git -C extern/cfe/cfe am "$PWD/patches/cfe/0001-WIP-max_gw_storage-set_value-fix.patch"
+
+# Fix only, on ngen's pin, without a branch
+git -C extern/cfe/cfe apply --include=src/bmi_cfe.c "$PWD/patches/cfe/0001-WIP-max_gw_storage-set_value-fix.patch"
+```
+
+Then rebuild the library and reinstall the wrapper: `make -C commands build-cfe-lib` and `make -C commands install-bmi-wrappers BMI_REF=add-bmi-setup FORCE=1`.
+
+**Go back to ngen's pin** before `configure-*` or any `build-*-lib`, which run `git submodule update` and refuse to while the submodule has local changes:
+
+```sh
+git submodule update -- extern/cfe/cfe
+```
+
+**Drop this section, the branch and the patch** once the fix is merged upstream and ngen's `extern/cfe/cfe` pin includes it. Then mark `max_gw_storage` `equivalent` in the `bmi_setup` CFE catalog, as described in `tools/ngen-bmi/README.md`.

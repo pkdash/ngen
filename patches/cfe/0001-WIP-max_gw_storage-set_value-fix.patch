@@ -1,0 +1,99 @@
+From 3ec291a5f88c0a91312d6faf11903635e86ba3d5 Mon Sep 17 00:00:00 2001
+From: pkdash <pabitra.dash@usu.edu>
+Date: Thu, 19 Nov 2026 10:51:23 -0500
+Subject: [PATCH] WIP: max_gw_storage set_value fix
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ CMakeLists.txt        |  1 +
+ src/bmi_cfe.c         |  5 ++++-
+ test/test_bmi_model.c | 38 ++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 43 insertions(+), 1 deletion(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 183a52c..d44be99 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -177,6 +177,7 @@ if (NGEN)
+     add_test(NAME test_get_time_units_1 COMMAND test_bmi_model test_get_time_units)
+     add_test(NAME test_get_current_time_1 COMMAND test_bmi_model test_get_current_time)
+     add_test(NAME test_set_value_1 COMMAND test_bmi_model test_set_value)
++    add_test(NAME test_set_value_max_gw_storage_1 COMMAND test_bmi_model test_set_value_max_gw_storage)
+     add_test(NAME test_set_value_at_indices_1 COMMAND test_bmi_model test_set_value_at_indices)
+     add_test(NAME test_get_value_1 COMMAND test_bmi_model test_get_value)
+     add_test(NAME test_get_value_at_indices_1 COMMAND test_bmi_model test_get_value_at_indices)
+diff --git a/src/bmi_cfe.c b/src/bmi_cfe.c
+index 8ea85f6..a0d09f2 100644
+--- a/src/bmi_cfe.c
++++ b/src/bmi_cfe.c
+@@ -2265,7 +2265,10 @@ static int Set_value (Bmi *self, const char *name, void *src)
+ 
+     }
+ 
+-    if (strcmp (name, "storage_max_m") == 0) {
++    // The groundwater capacity is published as "max_gw_storage" (param_var_names); "storage_max_m" is only its
++    // name in the internal state-variable table, which Set_value is never called with. Initialization sets the
++    // storage as a fraction (gw_storage) of the capacity, so rescale it here to match a config-file value.
++    if (strcmp (name, "max_gw_storage") == 0) {
+          cfe_state_struct* cfe_ptr = (cfe_state_struct *) self->data;
+          cfe_ptr->gw_reservoir.storage_m = cfe_ptr->gw_reservoir.gw_storage * cfe_ptr->gw_reservoir.storage_max_m;
+      }
+diff --git a/test/test_bmi_model.c b/test/test_bmi_model.c
+index 2c3a93b..b46e2c2 100644
+--- a/test/test_bmi_model.c
++++ b/test/test_bmi_model.c
+@@ -1164,6 +1164,42 @@ int test_set_value(TestFixture* fixture)
+     return TEST_RETURN_CODE_PASS;
+ }
+ 
++/**
++ * Setting the groundwater capacity through BMI must rescale the groundwater storage, as reading it from the config
++ * does: initialization sets the storage to gw_storage (a fraction) times max_gw_storage.
++ */
++int test_set_value_max_gw_storage(TestFixture* fixture)
++{
++    int bmi_status = fixture->bmi_model->initialize(fixture->bmi_model, fixture->cfg_file);
++    if (bmi_status != BMI_SUCCESS) {
++        printf("\nReturned BMI_FAILURE status code attempting to initialize (in order to test set_value)");
++        return TEST_RETURN_CODE_FAIL;
++    }
++    cfe_state_struct* cfe_ptr = (cfe_state_struct*) fixture->bmi_model->data;
++    const double fraction = cfe_ptr->gw_reservoir.gw_storage;
++    if (!confirm_matches_expected_doubles(fraction * cfe_ptr->gw_reservoir.storage_max_m,
++                                          cfe_ptr->gw_reservoir.storage_m)) {
++        printf("\nUnexpected groundwater storage after initialize (test precondition)");
++        return TEST_RETURN_CODE_FAIL;
++    }
++
++    double new_max = 2.0 * cfe_ptr->gw_reservoir.storage_max_m;
++    bmi_status = fixture->bmi_model->set_value(fixture->bmi_model, "max_gw_storage", &new_max);
++    if (bmi_status != BMI_SUCCESS) {
++        printf("\nReturned BMI_FAILURE status setting 'max_gw_storage'");
++        return TEST_RETURN_CODE_FAIL;
++    }
++    if (!confirm_matches_expected_doubles(new_max, cfe_ptr->gw_reservoir.storage_max_m)) {
++        printf("\n'max_gw_storage' was not set");
++        return TEST_RETURN_CODE_FAIL;
++    }
++    if (!confirm_matches_expected_doubles(fraction * new_max, cfe_ptr->gw_reservoir.storage_m)) {
++        printf("\nGroundwater storage was not rescaled after setting 'max_gw_storage'");
++        return TEST_RETURN_CODE_FAIL;
++    }
++    return TEST_RETURN_CODE_PASS;
++}
++
+ int test_set_value_at_indices(TestFixture* fixture)
+ {
+     // This should basically work the same as the test for set_value, just setting only at indices 0
+@@ -1393,6 +1429,8 @@ int main(int argc, const char* argv[])
+         result = test_get_var_nbytes(fixture);
+     else if (strcmp(argv[1], "test_set_value") == 0)
+         result = test_set_value(fixture);
++    else if (strcmp(argv[1], "test_set_value_max_gw_storage") == 0)
++        result = test_set_value_max_gw_storage(fixture);
+     else if (strcmp(argv[1], "test_set_value_at_indices") == 0)
+         result = test_set_value_at_indices(fixture);
+     else
+-- 
+2.50.1 (Apple Git-155)
+

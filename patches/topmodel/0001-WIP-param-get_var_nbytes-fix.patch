@@ -1,0 +1,108 @@
+From f320ecc8e1c87340f09f563baab695850ef4744a Mon Sep 17 00:00:00 2001
+From: pkdash <pabitra.dash@usu.edu>
+Date: Thu, 19 Nov 2026 10:51:24 -0500
+Subject: [PATCH] WIP: param get_var_nbytes fix
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/bmi_topmodel.c                        | 15 ++++++++-
+ test/data/topmod_unit_test_standalone.run |  7 ++++
+ test/main_unit_test_bmi.c                 | 41 +++++++++++++++++++++++
+ 3 files changed, 62 insertions(+), 1 deletion(-)
+ create mode 100644 test/data/topmod_unit_test_standalone.run
+
+diff --git a/src/bmi_topmodel.c b/src/bmi_topmodel.c
+index 03d2a6f..8044841 100755
+--- a/src/bmi_topmodel.c
++++ b/src/bmi_topmodel.c
+@@ -746,8 +746,21 @@ static int Get_var_nbytes (Bmi *self, const char *name, int * nbytes)
+             }
+         }
+     }
++    // Calibratable parameters are scalars. They must not fall through to a
++    // per-timestep count: in stand-alone mode nstep is the length of the input
++    // series, and Get_value/Set_value copy nbytes, overrunning the scalar.
++    if (item_count < 1) {
++        for (int i = 0; i < PARAM_VAR_NAME_COUNT; i++) {
++            if (strcmp(name, param_var_names[i]) == 0) {
++                item_count = 1;
++                break;
++            }
++        }
++    }
++    // Every variable Get_value_ptr serves is matched above, so anything else is
++    // not a variable of this model.
+     if (item_count < 1)
+-        item_count = ((topmodel_model *) self->data)->nstep;
++        return BMI_FAILURE;
+ 
+     *nbytes = item_size * item_count;
+     return BMI_SUCCESS;
+diff --git a/test/data/topmod_unit_test_standalone.run b/test/data/topmod_unit_test_standalone.run
+new file mode 100644
+index 0000000..6970c02
+--- /dev/null
++++ b/test/data/topmod_unit_test_standalone.run
+@@ -0,0 +1,7 @@
++1
++Taegu Pyungkwang River Catchment: Calibration Data
++../test/data/inputs.dat
++../test/data/subcat.dat
++../test/data/params.dat
++topmod.out
++hyd.out
+\ No newline at end of file
+diff --git a/test/main_unit_test_bmi.c b/test/main_unit_test_bmi.c
+index eb6fcd3..99a85af 100755
+--- a/test/main_unit_test_bmi.c
++++ b/test/main_unit_test_bmi.c
+@@ -426,5 +426,46 @@ main(void){
+         free(model);
+         printf("\n******************\nEND BMI UNIT TEST\n\n");
+     }
++
++    // Parameters are scalars, so get_var_nbytes must report one item for them in
++    // stand-alone mode too, where nstep is the length of the input series (950
++    // here) rather than 1. A scalar set_value below would overrun otherwise.
++    printf("\nTEST BMI PARAMETER SIZES (STAND-ALONE MODE)\n*******************************************\n");
++    {
++        Bmi *standalone = (Bmi *) malloc(sizeof(Bmi));
++        register_bmi_topmodel(standalone);
++        const char *cfg_file = REPO_ROOT_DIR "/test/data/topmod_unit_test_standalone.run";
++        status = standalone->initialize(standalone, cfg_file);
++        assert(status == BMI_SUCCESS);
++
++        static const char *all_param_names[8] = {"t0", "szm", "td", "srmax", "sr0", "xk0", "chv", "rv"};
++        for (int i = 0; i < 8; i++) {
++            int param_nbytes = 0;
++            status = standalone->get_var_nbytes(standalone, all_param_names[i], &param_nbytes);
++            assert(status == BMI_SUCCESS);
++            assert(param_nbytes == (int) sizeof(double));
++
++            double original = 0.0, set_to = 0.0, read_back = 0.0;
++            status = standalone->get_value(standalone, all_param_names[i], &original);
++            assert(status == BMI_SUCCESS);
++            set_to = original * 1.5;
++            status = standalone->set_value(standalone, all_param_names[i], &set_to);
++            assert(status == BMI_SUCCESS);
++            status = standalone->get_value(standalone, all_param_names[i], &read_back);
++            assert(status == BMI_SUCCESS);
++            assert(read_back == set_to);
++            printf(" %s: nbytes %i, set & get match\n", all_param_names[i], param_nbytes);
++        }
++
++        // A name that is not a variable of the model must be rejected.
++        int unknown_nbytes = 0;
++        status = standalone->get_var_nbytes(standalone, "not_a_topmodel_variable", &unknown_nbytes);
++        assert(status == BMI_FAILURE);
++        printf(" unknown variable name rejected\n");
++
++        status = standalone->finalize(standalone);
++        assert(status == BMI_SUCCESS);
++        free(standalone);
++    }
+     return 0;
+ }
+-- 
+2.50.1 (Apple Git-155)
+

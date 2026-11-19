@@ -102,3 +102,36 @@ Built from `master` (`89e4dc5`) with the change, with AddressSanitizer on as in 
 - the new stand-alone test **fails on unpatched `master`** (`Assertion 'param_nbytes == (int) sizeof(double)' failed`) and **passes with the fix**;
 - `simple_unit_tests`, `serialization_unit_tests` and `serialization_integration_tests` all pass;
 - through a BMI host, setting each parameter after `initialize` gives output bit-identical to the same value set in `params.dat`, for `t0, szm, td, srmax, sr0, chv, rv`. `xk0` has no observable effect on output in these runs.
+
+## Local fix in this ngen checkout
+
+_For ngen-bmi work. Remove this section before filing the ticket upstream._
+
+- **Branch:** `fix-param-nbytes` in `extern/topmodel/topmodel`, commit `f320ecc`, based on upstream `master` (`89e4dc5`). It changes `src/bmi_topmodel.c` and `test/main_unit_test_bmi.c`, and adds `test/data/topmod_unit_test_standalone.run`.
+- **The branch exists only in this machine's submodule clone.** It has not been pushed. A copy is saved as [`patches/topmodel/0001-WIP-param-get_var_nbytes-fix.patch`](patches/topmodel/0001-WIP-param-get_var_nbytes-fix.patch).
+- **The patch applies cleanly to ngen's pin (`a4cb3ba`)** as well as to `master`, so it can be used to backport the fix without upgrading TOPMODEL (upstream `master` needs Boost ≥ 1.86).
+
+**Get the fix back:**
+
+```sh
+# Branch still in the submodule clone
+git -C extern/topmodel/topmodel switch fix-param-nbytes
+
+# Branch lost (fresh clone or re-cloned submodule): recreate it from the patch
+git -C extern/topmodel/topmodel switch -c fix-param-nbytes 89e4dc5
+git -C extern/topmodel/topmodel am "$PWD/patches/topmodel/0001-WIP-param-get_var_nbytes-fix.patch"
+
+# Backport onto ngen's pin instead (builds with ngen's Boost)
+git -C extern/topmodel/topmodel switch -c fix-param-nbytes-on-pin a4cb3ba
+git -C extern/topmodel/topmodel am "$PWD/patches/topmodel/0001-WIP-param-get_var_nbytes-fix.patch"
+```
+
+Then rebuild the library and reinstall the wrapper: `make -C commands build-topmodel-lib` and `make -C commands install-bmi-wrappers BMI_REF=add-bmi-setup FORCE=1`. Building on the `master`-based branch fails under ngen's CMake (`TOPMODEL_DEBUG` undeclared); see `bmi-model-run-setup-design.md` §5.1.
+
+**Go back to ngen's pin** before `configure-*` or any `build-*-lib`, which run `git submodule update` and refuse to while the submodule has local changes:
+
+```sh
+git submodule update -- extern/topmodel/topmodel
+```
+
+**Drop this section, the branch and the patch** once the fix is merged upstream and ngen's `extern/topmodel/topmodel` pin includes it (or the backport is adopted).
