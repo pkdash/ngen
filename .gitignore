@@ -128,6 +128,7 @@ data/hydrofabric/huc01_demo/
 # NGen build-related items
 .venv
 .venv-linux
+.venv-prep
 boost_*
 include/NGenConfig.h
 
@@ -137,6 +138,9 @@ include/NGenConfig.h
 data/forcing/huc01_demo/
 # HUC01 Demo Testing Hydrofabric
 data/hydrofabric/huc01_demo/
+
+# Gage specific test data directory
+data/gage-*/
 
 # NGen execution artifacts
 ##############################

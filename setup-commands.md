@@ -232,6 +232,16 @@ make -C commands test-ngen-bmi             # unit, wrapper-integration and ngen-
 make -C commands ngen-bmi-example OUT=/tmp/ngen_bmi_example
 ```
 
+- **Input data.** To make a hydrofabric subset, forcings and a realization for a gage, run
+  `make -C commands prepare-data GAGE=<id> START=YYYY-MM-DD END=YYYY-MM-DD`. The output goes to
+  `data/gage-<id>/`.
+  - It runs `ngiab-data-preprocess` through `uvx`, or through `.venv-prep` from
+    `setup-prep-venv`. It never uses `.venv-linux`, because the tool's exact version pins would
+    conflict with the wrappers.
+  - `PREP_ARGS="..."` passes the tool's CLI arguments directly.
+  - On Apple silicon, run it on the macOS host with `uv`, not in the container. The tool's
+    `exactextract` dependency has no Linux arm64 wheel; the output still lands in `data/`.
+
 - **Local `bmi_setup`.** `install-ngen-bmi BMI_SETUP=/path/to/BMI/bmi_setup` installs a local
   checkout in editable mode. Its own unit and wrapper tests then join `test-ngen-bmi`.
 - **Skipped layers.** `test-ngen-bmi` skips a test layer when its prerequisites are missing.

@@ -169,6 +169,11 @@ help:
 	@echo "                        layers whose prerequisites are missing are skipped"
 	@echo "  ngen-bmi-example      Run tools/ngen-bmi/examples/change_parameters.py (OUT=dir)"
 	@echo
+	@echo "Input data (ngiab-data-preprocess $(NGIAB_PREP_VERSION); own env, never $(VENV)):"
+	@echo "  setup-prep-venv       Create $(PREP_VENV) with ngiab-data-preprocess (not needed if uvx exists)"
+	@echo "  prepare-data          GAGE=<usgs id> START=YYYY-MM-DD END=YYYY-MM-DD -> data/gage-<id>/"
+	@echo "                        or PREP_ARGS=\"<cli args>\" for any other subset/options"
+	@echo
 	@echo "Build targets per configuration:"
 	@echo "  default   TARGETS=\"ngen testbmicppmodel\"       ueb   TARGETS=\"ngen bmiuebcxx\""
 	@echo "  python    TARGETS=\"ngen\"                        all   TARGETS=\"ngen bmiuebcxx surfacebmi\""
@@ -623,3 +628,58 @@ ngen-bmi-example:
 	$(require_venv)
 	@cd $(ROOT) && LD_LIBRARY_PATH="$${LD_LIBRARY_PATH:+$$LD_LIBRARY_PATH:}$(BMI_WRAPPER_LIB_DIRS)" \
 	    $(VENV)/bin/python tools/ngen-bmi/examples/change_parameters.py $(if $(OUT),--out $(OUT))
+
+# ---------------------------------------------------------------------------
+# Input data: NGIAB_data_preprocess (hydrofabric subset, forcings, realization)
+# ---------------------------------------------------------------------------
+# Kept out of $(VENV) on purpose. ngiab-data-preprocess pins exact versions of
+# dask, xarray, zarr, s3fs, requests, Flask, ... and caps Python at 3.12, so in
+# the wrapper venv it would fight the bmi_setup / pymt_* resolve. It hands over
+# files only (gpkg, forcings, realization), so it runs in its own environment:
+# $(PREP_VENV) when setup-prep-venv made one, otherwise uvx. Pinned so a gage
+# prepared twice gets the same configs.
+NGIAB_PREP_VERSION ?= 4.9.4
+PREP_VENV          := .venv-prep
+
+# exactextract (pinned ==0.2.0) publishes no Linux arm64 wheels in any version,
+# and its sdist does not build here (no GEOS; fails with scikit-build-core >=0.10).
+# So in the devcontainer on Apple silicon, run the prep on the macOS host instead:
+# its output is plain files in the bind-mounted data/.
+define require_prep_platform
+	@if [ "$$(uname -s)" = Linux ] && case "$$(uname -m)" in aarch64|arm64) true;; *) false;; esac; then \
+	    echo "ERROR: ngiab-data-preprocess cannot be installed on Linux arm64 (no exactextract wheel)."; \
+	    echo "Run it on the macOS host instead, from the repo root (needs uv):"; \
+	    echo "  make -C commands $@ $(if $(GAGE),GAGE=$(GAGE) )$(if $(START),START=$(START) )$(if $(END),END=$(END) )$(if $(PREP_ARGS),PREP_ARGS=\"$(PREP_ARGS)\")"; \
+	    echo "The output lands in the bind-mounted data/, so the container sees it."; \
+	    exit 1; \
+	fi
+endef
+
+.PHONY: setup-prep-venv
+setup-prep-venv:
+	$(require_prep_platform)
+	cd $(ROOT) && \
+	python3 -m venv $(PREP_VENV) && \
+	$(PREP_VENV)/bin/pip install --quiet --upgrade pip && \
+	$(PREP_VENV)/bin/pip install --quiet "ngiab-data-preprocess==$(NGIAB_PREP_VERSION)" && \
+	echo "$(PREP_VENV) ready: ngiab-data-preprocess $(NGIAB_PREP_VERSION)"
+
+# The 4.9.4 wheel's console script is `cli` (there is no `ngiab-prep` in it).
+# -o with a path writes there instead of ~/ngiab_preprocess_output/<name>.
+.PHONY: prepare-data
+prepare-data:
+	$(require_prep_platform)
+	@cd $(ROOT) && \
+	if [ -n "$(PREP_ARGS)" ]; then args="$(PREP_ARGS)"; \
+	elif [ -n "$(GAGE)" ] && [ -n "$(START)" ] && [ -n "$(END)" ]; then \
+	    args="-i gage-$(GAGE) -sfr --start $(START) --end $(END) -o $(ROOT)/data/gage-$(GAGE)"; \
+	else \
+	    echo "ERROR: set GAGE=<usgs id> START=YYYY-MM-DD END=YYYY-MM-DD, or PREP_ARGS=\"<cli args>\""; exit 1; \
+	fi; \
+	if [ -x "$(PREP_VENV)/bin/cli" ]; then run="$(PREP_VENV)/bin/cli"; \
+	elif command -v uvx >/dev/null 2>&1; then run="uvx --from ngiab-data-preprocess==$(NGIAB_PREP_VERSION) cli"; \
+	else \
+	    echo "ERROR: no uvx and no $(PREP_VENV). Run 'make -C commands setup-prep-venv' or install uv."; exit 1; \
+	fi; \
+	echo "+ $$run $$args"; \
+	$$run $$args
