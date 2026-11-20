@@ -21,6 +21,7 @@ _EXPORTS = {
     "NotSettable": "project",
     "ValidationError": "project",
     "ValidationWarning": "project",
+    "LocalizationWarning": "project",
     "RunResult": "runner",
     "NgenRunError": "runner",
     "find_ngen": "runner",

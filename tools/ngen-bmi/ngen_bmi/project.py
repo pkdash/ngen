@@ -32,13 +32,14 @@ from bmi_setup import Catalog, Parameter, get_spec, load_catalog, open_config, o
 from bmi_setup.config_files import TopmodelConfig
 
 from .hydrofabric import Hydrofabric
+from .localize import local_config_edits, localize_libraries
 from .realization import (ID_PATTERN, ModuleRef, absolutize, catchment_override, get_at,
                           iter_modules, resolve_id)
 from .registry import keys_for_model_type, load_registry
 from .runner import RunResult, check_features, find_ngen, required_features, run_ngen
 
-__all__ = ["MODEL_PARAMS", "INIT_CONFIG", "Change", "Module", "NotSettable", "Project",
-           "ValidationError", "ValidationWarning", "choose_route"]
+__all__ = ["MODEL_PARAMS", "INIT_CONFIG", "Change", "LocalizationWarning", "Module", "NotSettable",
+           "Project", "ValidationError", "ValidationWarning", "choose_route"]
 
 PathLike = Union[str, Path]
 MODEL_PARAMS = "model_params"
@@ -61,6 +62,10 @@ class ValidationError(RuntimeError):
 
 class ValidationWarning(UserWarning):
     pass
+
+
+class LocalizationWarning(UserWarning):
+    """A path from another environment (e.g. NGIAB's /dmod) was mapped to a local one."""
 
 
 def choose_route(param: Parameter, route: Optional[str] = None) -> str:
@@ -138,6 +143,8 @@ class Module:
         self.project = project
         self.key = key
         self.ref = ref
+        self.entry = entry
+        self._local_edits: Optional[Dict[str, str]] = None
         self.bmi_setup_key = entry.get("bmi_setup_key")
         if not self.bmi_setup_key:
             raise KeyError(f"registry entry {key!r} has no bmi_setup_key, so ngen_bmi cannot "
@@ -167,6 +174,33 @@ class Module:
 
     def read_config(self, path: PathLike):
         return open_config(self.spec.codec, path, self.project.root)
+
+    @property
+    def local_edits(self) -> Dict[str, str]:
+        """Config edits that point missing data directories at this checkout.
+
+        Found from the first catchment's config, using the registry entry's
+        ``local_config_dirs`` (for Noah, ``parameter_dir``); see
+        :func:`ngen_bmi.localize.local_config_edits`. ``Project`` applies them
+        to the config copies it writes, never to the input files.
+        """
+        if self._local_edits is None:
+            self._local_edits = {}
+            if self.entry.get("local_config_dirs"):
+                try:
+                    config = self.config_for(self.project.catchment_ids()[0])
+                except ValueError:                        # no init_config
+                    config = None
+                if config is not None and config.is_file():
+                    cfg = self.read_config(config)
+                    self._local_edits = local_config_edits(
+                        self.entry, lambda key: cfg.get(key) if key in cfg else None,
+                        self.project.root)
+                    if self._local_edits:
+                        warnings.warn(f"{self.key}: {config} names directories that do not exist; "
+                                      f"the configs written for ngen use "
+                                      f"{self._local_edits}", LocalizationWarning, stacklevel=3)
+        return self._local_edits
 
     def route(self, name: str) -> str:
         return choose_route(self.catalog[name])
@@ -203,9 +237,14 @@ class Module:
         catchment = catchment or self.project.catchment_ids()[0]
         config = self.config_for(catchment)
         rows = OrderedDict()
-        with open_model(self.spec.key, config, workdir=self.project.root) as m:
-            for name, row in m.parameters().items():
-                rows[name] = row
+        with tempfile.TemporaryDirectory(prefix="ngen_bmi_params_") as tmp:
+            opened = config
+            if self.local_edits:
+                opened = self.project._rewrite(self, config, Path(tmp) / config.name,
+                                               self.local_edits)
+            with open_model(self.spec.key, opened, workdir=self.project.root) as m:
+                for name, row in m.parameters().items():
+                    rows[name] = row
         cfg = self.read_config(config)
         for name, row in rows.items():
             param = self.catalog[name]
@@ -233,6 +272,11 @@ class Project:
                                       "yet; ngen_bmi writes catchment overrides itself")
         self.root = Path(root).resolve()
         self.realization = absolutize(realization, self.root)
+        self.localized = localize_libraries(self.realization)
+        if self.localized:
+            warnings.warn("library_file not found, using the local build: " + "; ".join(
+                f"{old} -> {new}" for old, new in self.localized.items()),
+                LocalizationWarning, stacklevel=3)
         self.hydrofabric = hydrofabric
         self.registry = registry if registry is not None else load_registry()
         self.source = source
@@ -311,6 +355,21 @@ class Project:
     def _changed_modules(self) -> List[Module]:
         return [self.module(key) for key in dict.fromkeys(c.module for c in self._changes)]
 
+    def _modules_to_write(self) -> List[Module]:
+        """Changed modules, plus unchanged ones whose configs need local paths."""
+        modules = self._changed_modules()
+        seen = {m.key for m in modules}
+        for key in dict.fromkeys(k for k, _ in self._matches()):
+            if key in seen:
+                continue
+            try:
+                module = self.module(key)
+            except KeyError:                  # ambiguous, or no bmi_setup catalog
+                continue
+            if module.local_edits:
+                modules.append(module)
+        return modules
+
     def _effective(self, module: Module):
         """(changes for every catchment, {catchment: changes}) by name; later wins."""
         glob: Dict[str, Change] = OrderedDict()
@@ -369,10 +428,12 @@ class Project:
         overrides: Dict[str, List[Tuple[ModuleRef, Dict, Optional[str], List[str]]]] = {}
         checks: List[_Check] = []
 
-        for module in self._changed_modules():
+        for module in self._modules_to_write():
             params = get_at(glob_block, module.ref.location)
             glob, per = self._effective(module)
-            cfg_glob = {c.param.config_key: c.value for c in glob.values() if c.route == INIT_CONFIG}
+            cfg_glob = {**module.local_edits,
+                        **{c.param.config_key: c.value for c in glob.values()
+                           if c.route == INIT_CONFIG}}
             cfg_per = {cat: {c.param.config_key: c.value for c in d.values() if c.route == INIT_CONFIG}
                        for cat, d in per.items()}
             cfg_per = {cat: e for cat, e in cfg_per.items() if e}

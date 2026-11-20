@@ -7,7 +7,9 @@
     "bmi_setup_key links a model to its bmi_setup (pkdash/BMI) model and parameter catalog; ngen_bmi needs it.",
     "Only models with a bmi_setup catalog (cfe, noah, pet, topmodel) have the key. Without it ngen_bmi cannot set",
     "that model's parameters, but bmi_introspect.py still works. Add it after adding a catalog to bmi_setup/catalogs/.",
-    "realization_model_types are matched exactly, ignoring case (ngen_bmi.registry.matches_model_type)."
+    "realization_model_types are matched exactly, ignoring case (ngen_bmi.registry.matches_model_type).",
+    "local_config_dirs maps a model config key to a repo directory; ngen_bmi uses it when the configured directory",
+    "does not exist (e.g. NGIAB's /dmod/datasets/static/ for Noah's parameter_dir)."
   ],
 
   "cfe": {
@@ -38,7 +40,10 @@
       "NOAH_MOD_DIR": "extern/noah-owp-modular/cmake_build/mod"
     },
     "sample_config": "data/gauge_01073000/NOAH/cat-11223.input",
-    "realization_model_types": ["bmi_fortran_noahowp"]
+    "local_config_dirs": {
+      "parameter_dir": "extern/noah-owp-modular/noah-owp-modular/parameters"
+    },
+    "realization_model_types": ["bmi_fortran_noahowp", "noahowp"]
   },
 
   "lasam": {

@@ -335,3 +335,117 @@ def test_validate_warns_for_unproven_parameters(load, fake_model):
     with pytest.warns(ValidationWarning, match="no observable effect"):
         notes = p.validate()
     assert notes == ["cfe.Klf has had no observable effect in the equivalence test"]
+
+
+# ------------------------------------------------------------------ paths from other environments
+NOAH_PARAMS = "extern/noah-owp-modular/noah-owp-modular/parameters"
+
+
+@pytest.fixture
+def fake_repo(tmp_path, monkeypatch):
+    """A repo root holding a built CFE library and Noah's parameter tables."""
+    from ngen_bmi import localize
+    repo = tmp_path / "repo"
+    (repo / "extern/cfe/cmake_build").mkdir(parents=True)
+    (repo / "extern/cfe/cmake_build/libcfebmi.so.1.0.0").write_text("")
+    (repo / NOAH_PARAMS).mkdir(parents=True)
+    monkeypatch.setattr(localize, "REPO_ROOT", repo)
+    return repo
+
+
+def _ngiab_noah(project_dir, parameter_dir="/dmod/datasets/static/"):
+    """Noah configs as NGIAB_data_preprocess writes them: parameter_dir points into its image."""
+    text = NOAH_CONFIG.format(nsoil=4).replace(
+        "&structure", f'&structure\n  parameter_dir    = "{parameter_dir}"   ! tables')
+    for c in CATS:
+        (project_dir / "noah" / f"{c}.input").write_text(text)
+    return text
+
+
+def test_missing_library_is_mapped_to_local_build(load, fake_repo, project_dir):
+    from ngen_bmi import LocalizationWarning
+    real = json.loads((project_dir / "realization.json").read_text())
+    module_params(real["global"], "bmi_c_cfe")["library_file"] = "/dmod/shared_libs/libcfebmi.so.1.0.0"
+    with pytest.warns(LocalizationWarning, match="/dmod/shared_libs/libcfebmi.so.1.0.0 -> "):
+        p = load(real)
+    g = p.realization["global"]
+    local = str(fake_repo / "extern/cfe/cmake_build/libcfebmi.so.1.0.0")
+    assert module_params(g, "bmi_c_cfe")["library_file"] == local
+    assert p.localized == {"/dmod/shared_libs/libcfebmi.so.1.0.0": local}
+    # relative paths with no local build of that name are left for ngen to report
+    assert module_params(g, "PET")["library_file"] == str(project_dir / "lib/libPET.so")
+
+
+def test_existing_library_is_kept(load, fake_repo, project_dir):
+    lib = project_dir / "libcfebmi.so.1.0.0"
+    lib.write_text("")
+    real = json.loads((project_dir / "realization.json").read_text())
+    module_params(real["global"], "bmi_c_cfe")["library_file"] = str(lib)
+    p = load(real)
+    assert module_params(p.realization["global"], "bmi_c_cfe")["library_file"] == str(lib)
+    assert p.localized == {}
+
+
+def test_missing_parameter_dir_is_replaced_in_written_configs(load, fake_repo, project_dir,
+                                                              tmp_path):
+    from ngen_bmi import LocalizationWarning
+    original = _ngiab_noah(project_dir)
+    p = load()
+    with pytest.warns(LocalizationWarning, match="parameter_dir"):
+        path = p.write(tmp_path / "run")                  # no changes asked for
+    noah = module_params(read_json(path)["global"], "bmi_fortran_noahowp")
+    assert noah["init_config"] == str(tmp_path / "run/configs/noah/{{id}}.input")
+    for c in CATS:
+        written = (tmp_path / "run/configs/noah" / f"{c}.input").read_text()
+        assert f'parameter_dir    = "{fake_repo / NOAH_PARAMS}/"' in written
+        assert (project_dir / "noah" / f"{c}.input").read_text() == original   # input untouched
+    assert not (tmp_path / "run/configs/cfe").exists()   # nothing to localize there
+
+
+def test_parameter_dir_edit_combines_with_parameter_changes(load, fake_repo, project_dir,
+                                                            tmp_path):
+    _ngiab_noah(project_dir)
+    p = load()
+    p.module("noah").set(**{"forcing.rain_snow_thresh": 2.5})
+    p.module("noah").set(**{"forcing.rain_snow_thresh": 0.5}, catchments=["cat-3"])
+    with pytest.warns(Warning):
+        p.write(tmp_path / "run")
+    for cat, thresh in (("cat-2", "2.5"), ("cat-3", "0.5")):
+        written = (tmp_path / "run/configs/noah" / f"{cat}.input").read_text()
+        assert f'"{fake_repo / NOAH_PARAMS}/"' in written
+        assert f"rain_snow_thresh   = {thresh}" in written
+
+
+def test_existing_parameter_dir_is_kept(load, fake_repo, project_dir, tmp_path):
+    (project_dir / "tables").mkdir()
+    _ngiab_noah(project_dir, "./tables/")
+    p = load()
+    assert p.module("noah").local_edits == {}
+    path = p.write(tmp_path / "run")
+    noah = module_params(read_json(path)["global"], "bmi_fortran_noahowp")
+    assert noah["init_config"] == str(project_dir / "noah/{{id}}.input")
+
+
+def test_parameters_opens_a_localized_copy(load, fake_repo, project_dir, monkeypatch):
+    from ngen_bmi import project
+    _ngiab_noah(project_dir)
+    seen = {}
+
+    class Model:
+        def __init__(self, key, config, workdir=None, **_):
+            seen["text"] = open(config).read()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return None
+
+        def parameters(self):
+            return {}
+
+    monkeypatch.setattr(project, "open_model", Model)
+    with pytest.warns(Warning):
+        p = load()
+        p.module("noah").parameters()
+    assert f'"{fake_repo / NOAH_PARAMS}/"' in seen["text"]
