@@ -60,6 +60,91 @@ Rebuild only in these cases:
   `configure-all` need them; restore them with `setup-boost` and `setup-ewts`. CFE, Noah-OWP and
   PET do not use them.
 
+## Preparing input data
+
+`ngen_bmi` starts from files that already exist: a hydrofabric subset (`.gpkg`), forcings, the
+per-catchment model configs and a realization. [NGIAB_data_preprocess](https://github.com/CIROH-UA/NGIAB_data_preprocess)
+(`ngiab-data-preprocess` on PyPI) makes all four for a gage or catchment. Run it once per domain
+and simulation period, before `Project.load`.
+
+**Don't install it into `.venv-linux`.** It pins exact versions of dask, xarray, zarr, s3fs,
+requests and Flask, and limits Python to 3.12 or older. In the wrapper venv those pins would
+conflict with `bmi_setup` and the `pymt_*` wrappers. Nothing in `ngen_bmi` imports it, because
+the two hand over files only. The make target therefore runs it in its own environment:
+
+```sh
+make -C commands prepare-data GAGE=10109001 START=2010-10-01 END=2011-09-30
+```
+
+- **What it does:** subsets, makes forcings and writes the realization (`-sfr`) into
+  `data/gage-10109001/`.
+- **Environment:** the target uses `uvx` if it is on `PATH`. Otherwise run
+  `make -C commands setup-prep-venv` once; it creates `.venv-prep`, which is gitignored.
+- **Apple silicon: run it on the macOS host, not in the devcontainer.** The container is Linux
+  arm64, and the tool's dependency `exactextract==0.2.0` has no Linux arm64 wheel; its source
+  build fails. Both targets stop with this message there. Run the same command in a host
+  terminal from the repo root, with [uv](https://docs.astral.sh/uv/) installed. The output goes
+  to the bind-mounted `data/`, so the container sees it, and the hydrofabric download in the
+  host's `~/.ngiab/` survives container rebuilds. On x86_64, the container works.
+- **Windows.** On a usual x86_64 PC, run the make target in the devcontainer, which is Linux
+  x86_64 there. The Windows host has no `make`, and the target needs bash. To run the prep on
+  the host anyway, for example on Windows on ARM, where the container is Linux arm64, call the
+  tool directly with `uv`, from the repo root in PowerShell:
+
+  ```powershell
+  uvx --from ngiab-data-preprocess==4.9.4 cli -i gage-10109001 -sfr --start 2010-10-01 --end 2011-09-30 -o "$PWD\data\gage-10109001"
+  ```
+
+  The output goes to the same `data\gage-<id>\` layout. This has not been tested on Windows. On
+  Windows on ARM, some dependencies may have no wheels.
+- **Version:** `ngiab-data-preprocess` is pinned with `NGIAB_PREP_VERSION`, 4.9.4 by default.
+- **Other options:** pass the CLI arguments yourself, as in
+  `PREP_ARGS="-i cat-5173 -sfr --start ... --end ... -o $PWD/data/cat-5173"`. See the tool's
+  README for the options, such as `--source aorc` and `--lstm`.
+- **First run:** it asks two questions:
+  - whether to use the default output directory; answer `y`, because `-o` overrides it anyway;
+  - whether to download the CONUS hydrofabric, several GB, into `~/.ngiab/`.
+
+  On x86_64, if you run it in the devcontainer, `~` is not bind-mounted there, so the
+  hydrofabric download is lost when the container is rebuilt.
+- **No `--run`:** that flag starts the NGIAB Docker image. Use `Project.run` instead.
+
+The output layout is `data/gage-<id>/config/` (the `gage-<id>_subset.gpkg`, `realization.json`
+and `cat_config/<model>/`) and `data/gage-<id>/forcings/`. Point `Project.load` at it:
+
+```python
+p = Project.load("data/gage-10109001/config/realization.json",
+                 hydrofabric="data/gage-10109001/config/gage-10109001_subset.gpkg",
+                 root="data/gage-10109001")
+```
+
+`root=` is required. The realization's paths, such as `./config/cat_config/CFE/{{id}}.ini`
+and `./forcings/forcings.nc`, are relative to the output folder, because NGIAB starts ngen
+there. Without `root=`, they are resolved from the current directory.
+
+**Paths into the NGIAB image are remapped.** The generated files point at the NGIAB Docker
+image: `library_file` is `/dmod/shared_libs/<lib>`, and Noah's `parameter_dir` is
+`/dmod/datasets/static/`. When such a path does not exist, `ngen_bmi` replaces it with the local
+build and issues a `LocalizationWarning`:
+- **Libraries:** the library of the same name in `extern/*/cmake_build/`.
+- **Data directories:** the directory given by the registry's `local_config_dirs`; for Noah,
+  `extern/noah-owp-modular/noah-owp-modular/parameters/`. The edit is made in the config copies
+  written to `<run_dir>/configs/<model>/`.
+
+The prepared folder itself is never edited, so it still runs in NGIAB.
+
+**Noah version.** NGIAB's Noah configs set `stomatal_resistance_option = 4` and
+`evap_srfc_resistance_option = 5`. Noah reads these options in `initialize`, before any `set()`,
+and the older pin (0abb891, 2024-09) aborts on them. The `noah-owp-modular` submodule is now
+pinned at f80bd28, the commit CIROH-UA/ngen `ngiab` uses, which accepts both. After pulling
+this change:
+
+```sh
+git submodule update -- extern/noah-owp-modular/noah-owp-modular
+make -C commands build TARGETS="ngen surfacebmi"
+make -C commands install-bmi-wrappers BMI_REF=add-bmi-setup FORCE=1   # rebuilds pymt_noah_owp
+```
+
 ## Usage
 
 ```python
@@ -68,6 +153,7 @@ from ngen_bmi import Project
 p = Project.load("data/gauge_01073000/example_bmi_multi_realization_config_w_routing.json",
                  hydrofabric="data/gauge_01073000/gauge_01073000.gpkg")
 
+p.modules()                                    # {registry key: model_type_name}; keys for p.module()
 cfe = p.module("cfe")                          # found through wrappers.json realization_model_types
 cfe.parameters()                               # DataFrame: catalog plus live values, route per parameter
 cfe.set(satdk=2.0e-5, b=8.0)                   # every catchment, via model_params
